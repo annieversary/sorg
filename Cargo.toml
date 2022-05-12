@@ -2,11 +2,9 @@
 name = "sorg"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"
-
-[build-dependencies]
-cc="*"
 
 [dependencies]
 color-eyre = "0.6.1"
-tree-sitter = "0.20.6"
+orgize = "0.9.0"
+slugmin = "1.0.2"
+tera = "1.15.0"
