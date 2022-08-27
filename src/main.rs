@@ -1,6 +1,6 @@
 use color_eyre::Result;
 use orgize::{Org, ParseConfig};
-use std::{fs::File, io::Read};
+use std::{fs::File, io::Read, path::Path};
 use tera::Tera;
 
 mod context;
@@ -45,8 +45,12 @@ fn main() -> Result<()> {
 
     let tree = Page::parse_index(&org, first, &keywords);
 
-    std::fs::remove_dir_all(build_path).expect("couldn't remove existing build directory");
+    if Path::new(build_path).exists() {
+        std::fs::remove_dir_all(build_path).expect("couldn't remove existing build directory");
+    }
+
     tree.render(&tera, build_path)?;
+
     std::process::Command::new("/bin/sh")
         .args(["-c", "cp -r static/* build"])
         .output()

@@ -19,13 +19,23 @@ pub fn get_index_context<'a>(headline: &Headline, org: &Org<'a>, children: &[Pag
         .iter()
         .map(|h| h.headline.title(org).raw.to_owned())
         .map(|h| (slugify(&h), h))
+        .map(|(slug, title)| format!("<a href=\"{slug}\">{title}</a>"))
         .collect::<Vec<_>>();
 
     let title = headline.title(org);
 
+    let html = write_html(
+        headline,
+        org,
+        IndexHtmlHandler {
+            level: headline.level(),
+            ..Default::default()
+        },
+    );
+
     let mut context = Context::new();
     context.insert("title", &title.raw);
-    context.insert("content", &"heyyy");
+    context.insert("content", &html);
     context.insert("pages", &pages);
 
     for (k, v) in headline.title(org).properties.iter() {
@@ -34,6 +44,9 @@ pub fn get_index_context<'a>(headline: &Headline, org: &Org<'a>, children: &[Pag
 
     context
 }
+/// generates the context for a blog post
+///
+/// renders the contents and gets the sections and stuff
 pub fn get_post_context<'a>(headline: &Headline, org: &Org<'a>) -> Context {
     let sections = headline
         .children(org)
@@ -45,9 +58,14 @@ pub fn get_post_context<'a>(headline: &Headline, org: &Org<'a>) -> Context {
     let mut context = Context::new();
     context.insert("title", &title.raw);
 
-    // TODO find a way to skip the headline, we just want the content
-
-    let html = write_html(headline, org);
+    let html = write_html(
+        headline,
+        org,
+        PostHtmlHandler {
+            level: headline.level(),
+            ..Default::default()
+        },
+    );
 
     context.insert("content", &html);
     context.insert("sections", &sections);
@@ -58,7 +76,11 @@ pub fn get_post_context<'a>(headline: &Headline, org: &Org<'a>) -> Context {
 
     context
 }
-pub fn get_org_file_context<'a>(headline: &Headline, org: &Org<'a>, file: &str) -> Result<Context> {
+pub fn _get_org_file_context<'a>(
+    headline: &Headline,
+    org: &Org<'a>,
+    file: &str,
+) -> Result<Context> {
     let sections = headline
         .children(org)
         .map(|h| h.title(org).raw.to_owned())
@@ -69,12 +91,11 @@ pub fn get_org_file_context<'a>(headline: &Headline, org: &Org<'a>, file: &str) 
     let mut context = Context::new();
     context.insert("title", &title.raw);
 
-    // TODO find a way to skip the headline, we just want the content
-
     let mut f = File::open(file)?;
     let mut src = String::new();
     f.read_to_string(&mut src)?;
     let mut w = Vec::new();
+    // use normal html writer
     Org::parse(&src).write_html(&mut w)?;
     let html = String::from_utf8(w)?;
 
@@ -88,9 +109,12 @@ pub fn get_org_file_context<'a>(headline: &Headline, org: &Org<'a>, file: &str) 
     Ok(context)
 }
 
-pub fn write_html<'a>(headline: &Headline, org: &Org<'a>) -> String {
-    let level = headline.level();
-
+/// renders html for a post
+pub fn write_html<'a>(
+    headline: &Headline,
+    org: &Org<'a>,
+    mut handler: impl HtmlHandler<Report>,
+) -> String {
     let it = headline
         .headline_node()
         .traverse(org.arena())
@@ -100,10 +124,6 @@ pub fn write_html<'a>(headline: &Headline, org: &Org<'a>) -> String {
         });
 
     let mut w = Vec::new();
-    let mut handler = MyHtmlHandler {
-        handler: DefaultHtmlHandler::default(),
-        level,
-    };
 
     for event in it {
         match event {
@@ -120,32 +140,92 @@ pub fn write_html<'a>(headline: &Headline, org: &Org<'a>) -> String {
 }
 
 #[derive(Default)]
-struct MyHtmlHandler {
+struct IndexHtmlHandler {
     handler: DefaultHtmlHandler,
     level: usize,
+    in_headline: bool,
+    in_page_title: bool,
 }
 
-impl HtmlHandler<Report> for MyHtmlHandler {
+impl HtmlHandler<Report> for IndexHtmlHandler {
+    fn start<W: Write>(&mut self, w: W, element: &Element) -> Result<()> {
+        match element {
+            Element::Headline { level } if *level > self.level => {
+                self.in_headline = true;
+            }
+            Element::Title(_) => {
+                self.in_page_title = true;
+            }
+            _ if !self.in_page_title && !self.in_headline => {
+                // fallthrough to default handler
+                self.handler.start(w, element)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn end<W: Write>(&mut self, w: W, element: &Element) -> Result<()> {
+        match element {
+            Element::Headline { level } if *level > self.level => {
+                self.in_headline = false;
+            }
+            Element::Title(_) => {
+                self.in_page_title = false;
+            }
+            _ if !self.in_page_title && !self.in_headline => {
+                // fallthrough to default handler
+                self.handler.end(w, element)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct PostHtmlHandler {
+    handler: DefaultHtmlHandler,
+    level: usize,
+    in_page_title: bool,
+}
+
+impl HtmlHandler<Report> for PostHtmlHandler {
     fn start<W: Write>(&mut self, mut w: W, element: &Element) -> Result<()> {
-        if let Element::Title(title) = element {
-            write!(
-                w,
-                "<h{0}><a id=\"{1}\" href=\"#{1}\">",
-                title.level - self.level,
-                slugify(&title.raw),
-            )?;
-        } else {
-            // fallthrough to default handler
-            self.handler.start(w, element)?;
+        match element {
+            Element::Title(title) if title.level == self.level => {
+                self.in_page_title = true;
+            }
+            Element::Title(title) => {
+                write!(
+                    w,
+                    "<h{0}><a id=\"{1}\" href=\"#{1}\">",
+                    title.level - self.level,
+                    slugify(&title.raw),
+                )?;
+            }
+            _ if !self.in_page_title => {
+                // fallthrough to default handler
+                self.handler.start(w, element)?;
+            }
+            _ => {}
         }
         Ok(())
     }
 
     fn end<W: Write>(&mut self, mut w: W, element: &Element) -> Result<()> {
-        if let Element::Title(title) = element {
-            write!(w, "</a></h{}>", title.level - self.level)?;
-        } else {
-            self.handler.end(w, element)?;
+        match element {
+            Element::Title(title) if title.level == self.level => {
+                self.in_page_title = false;
+            }
+            Element::Title(title) => {
+                write!(w, "</a></h{}>", title.level - self.level)?;
+            }
+            _ if !self.in_page_title => {
+                // fallthrough to default handler
+                self.handler.end(w, element)?;
+            }
+            _ => {}
         }
         Ok(())
     }

@@ -1,0 +1,39 @@
+* index
+hello this is my website hi hi hello
+** about
+i am me and this is a page on my website
+
+facts about me:
+- this is a fact
+- this is another fact
+** resources
+*** hey
+** projects
+here's some of my projects
+*** DONE project 1
+:PROPERTIES:
+:title: Project One
+:slug: project-uno
+:description: this was my first project
+:END:
+in this project i made a project that projects stuff
+*** PROGRESS project 2
+this is an ongoing project
+** blog
+here's my blog:
+*** PROGRESS some post (draft)                                                :post:
+this is an unfinished post that will not show up
+*** DONE some other post                                             :post:
+CLOSED: [2022-05-09 Mon 00:17]
+this is a finished post
+it will use the CLOSED: thing as the date of publish
+**** this is a headline
+with some stuff
+**** this is another headline
+**** TODO and another one
+this one does have text, and it's marked as /TODO/, which does *not* show up on the rendered html
+*** DONE this is a linked post, which will use the contents of the linked file :post:
+CLOSED: [2022-05-10 Tue 08:32]
+:PROPERTIES:
+:file: [[file:test.org][linked blogpost]]
+:END:

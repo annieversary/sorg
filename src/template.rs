@@ -2,10 +2,14 @@ use color_eyre::Result;
 use std::{borrow::Cow, collections::HashMap, fs::File, io::Write};
 use tera::{Context, Tera};
 
+/// get the correct template to use for a page
+///
+/// `template` property, `{name}.html`, or `default.html`
 pub fn get_template<'a>(
     tera: &Tera,
     properties: &HashMap<Cow<'a, str>, Cow<'a, str>>,
     name: &str,
+    index: bool,
 ) -> Cow<'a, str> {
     // use template set in properties
     if let Some(template) = properties.get("template") {
@@ -17,6 +21,8 @@ pub fn get_template<'a>(
         .any(|x| x == format!("{name}.html"))
     {
         Cow::Owned(format!("{name}.html"))
+    } else if index {
+        Cow::Borrowed("index.html")
     }
     // use default.html
     else {
@@ -24,6 +30,7 @@ pub fn get_template<'a>(
     }
 }
 
+/// renderst the given template to the output path using the provided context
 pub fn render_template(
     tera: &Tera,
     template: &str,

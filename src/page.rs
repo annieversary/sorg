@@ -36,7 +36,6 @@ impl<'a> Page<'a> {
                 if title.tags.contains(&Cow::Borrowed("post")) {
                     // if there's a keyword, and it's in PROGRESS, we skip it
                     if let Some(kw) = &title.keyword {
-                        // TODO we shouldn't need to call to_string here
                         if keywords.0.contains(&kw.to_string()) {
                             return None;
                         }
@@ -80,14 +79,19 @@ impl<'a> Page<'a> {
         let properties = title.properties.clone().into_hash_map();
         let name = &title.raw;
 
-        let template = get_template(tera, &properties, name);
         let out_path = get_out(&properties, name, out);
         let context = match &self.page {
             PageEnum::Index { children } => get_index_context(&self.headline, self.org, children),
             PageEnum::Post => get_post_context(&self.headline, self.org),
             // TODO open the file and process it individually
-            PageEnum::OrgFile { path } => get_post_context(&self.headline, self.org),
+            PageEnum::OrgFile { path: _path } => get_post_context(&self.headline, self.org),
         };
+        let template = get_template(
+            tera,
+            &properties,
+            name,
+            matches!(self.page, PageEnum::Index { .. }),
+        );
 
         println!("writing {out_path}");
         render_template(tera, &template, &context, &out_path)?;

@@ -1,5 +1,8 @@
 use orgize::{Element, Event, Org};
 
+/// extracts a file out of an org link
+///
+/// "[[file:test.org][linked blogpost]]" -> "test.org"
 pub fn parse_file_link(link: &str) -> Option<String> {
     let org = Org::parse(link);
 

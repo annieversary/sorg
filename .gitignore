@@ -1,5 +1,3 @@
 /target
 .DS_Store
-/build/
-/templates/
-/blog.org
+examples/build
