@@ -83,8 +83,7 @@ impl<'a> Page<'a> {
         let context = match &self.page {
             PageEnum::Index { children } => get_index_context(&self.headline, self.org, children),
             PageEnum::Post => get_post_context(&self.headline, self.org),
-            // TODO open the file and process it individually
-            PageEnum::OrgFile { path: _path } => get_post_context(&self.headline, self.org),
+            PageEnum::OrgFile { path } => get_org_file_context(&self.headline, self.org, path)?,
         };
         let template = get_template(
             tera,

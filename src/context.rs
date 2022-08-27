@@ -1,9 +1,10 @@
 use std::{
     fs::File,
     io::{Read, Write},
+    path::Path,
 };
 
-use color_eyre::{Report, Result};
+use color_eyre::{eyre::WrapErr, Report, Result};
 use orgize::{
     export::{DefaultHtmlHandler, HtmlHandler},
     indextree::NodeEdge,
@@ -76,10 +77,10 @@ pub fn get_post_context<'a>(headline: &Headline, org: &Org<'a>) -> Context {
 
     context
 }
-pub fn _get_org_file_context<'a>(
+pub fn get_org_file_context<'a>(
     headline: &Headline,
     org: &Org<'a>,
-    file: &str,
+    file: &Path,
 ) -> Result<Context> {
     let sections = headline
         .children(org)
@@ -91,13 +92,28 @@ pub fn _get_org_file_context<'a>(
     let mut context = Context::new();
     context.insert("title", &title.raw);
 
-    let mut f = File::open(file)?;
+    let mut f = File::open(file).wrap_err_with(|| {
+        format!(
+            "headline '{}' tried to read file '{}', which doesnt exist",
+            title.raw,
+            file.as_os_str().to_string_lossy()
+        )
+    })?;
     let mut src = String::new();
     f.read_to_string(&mut src)?;
-    let mut w = Vec::new();
-    // use normal html writer
-    Org::parse(&src).write_html(&mut w)?;
-    let html = String::from_utf8(w)?;
+
+    let new_org = Org::parse(&src);
+    let doc = new_org.document();
+    let first = doc.first_child(&new_org).unwrap();
+
+    let html = write_html(
+        &first,
+        &new_org,
+        PostHtmlHandler {
+            level: first.level(),
+            ..Default::default()
+        },
+    );
 
     context.insert("content", &html);
     context.insert("sections", &sections);

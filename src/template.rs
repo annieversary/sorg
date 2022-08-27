@@ -22,7 +22,7 @@ pub fn get_template<'a>(
     {
         Cow::Owned(format!("{name}.html"))
     } else if index {
-        Cow::Borrowed("index.html")
+        Cow::Borrowed("default_index.html")
     }
     // use default.html
     else {

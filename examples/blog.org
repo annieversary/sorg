@@ -35,5 +35,5 @@ this one does have text, and it's marked as /TODO/, which does *not* show up on 
 *** DONE this is a linked post, which will use the contents of the linked file :post:
 CLOSED: [2022-05-10 Tue 08:32]
 :PROPERTIES:
-:file: [[file:test.org][linked blogpost]]
+:file: [[file:other-post.org][linked blogpost]]
 :END:
