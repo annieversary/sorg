@@ -6,5 +6,7 @@ edition = "2021"
 [dependencies]
 color-eyre = "0.6.1"
 orgize = "0.9.0"
+serde = "1.0.144"
+serde_derive = "1.0.144"
 slugmin = "1.0.2"
 tera = "1.15.0"

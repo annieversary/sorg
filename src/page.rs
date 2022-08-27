@@ -105,15 +105,14 @@ impl<'a> Page<'a> {
 }
 
 fn get_out<'a>(properties: &HashMap<Cow<'a, str>, Cow<'a, str>>, name: &str, out: &str) -> String {
-    let f = if let Some(prop) = properties.get("out") {
-        prop
+    let f = if let Some(prop) = properties.get("slug") {
+        prop.clone()
     } else {
-        name
+        Cow::Owned(slugify(name))
     };
     if f == "index" {
         out.to_string()
     } else {
-        let f = slugify(f);
         format!("{out}/{f}")
     }
 }

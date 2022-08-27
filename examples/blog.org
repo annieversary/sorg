@@ -1,3 +1,9 @@
+#+title: my blog
+#+url: example.com
+#+templates: templates
+#+static: static
+#+out: build
+
 * index
 hello this is my website hi hi hello
 ** about

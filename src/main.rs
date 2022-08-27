@@ -1,6 +1,6 @@
 use color_eyre::Result;
 use orgize::{Org, ParseConfig};
-use std::{fs::File, io::Read, path::Path};
+use std::{collections::HashMap, fs::File, io::Read, path::Path};
 use tera::Tera;
 
 mod context;
@@ -13,16 +13,12 @@ use page::*;
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let build_path = "./build";
-
-    let tera = Tera::new("templates/*.html")?;
-
     // TODO this file should come from args
     let mut f = File::open("./blog.org")?;
     let mut src = String::new();
     f.read_to_string(&mut src)?;
 
-    let keywords = (
+    let todos = (
         vec![
             "TODO".to_string(),
             "PROGRESS".to_string(),
@@ -36,23 +32,33 @@ fn main() -> Result<()> {
     let org = Org::parse_custom(
         &src,
         &ParseConfig {
-            todo_keywords: keywords.clone(),
+            todo_keywords: todos.clone(),
         },
     );
+    let keywords = org
+        .keywords()
+        .map(|v| (v.key.as_ref(), v.value.as_ref()))
+        .collect::<HashMap<_, _>>();
+
+    let build_path = keywords.get("out").unwrap_or(&"build");
+    let static_path = keywords.get("static").unwrap_or(&"static");
+    let templates_path = keywords.get("templates").unwrap_or(&"templates");
+
     let doc = org.document();
 
     let first = doc.first_child(&org).unwrap();
 
-    let tree = Page::parse_index(&org, first, &keywords);
+    let tree = Page::parse_index(&org, first, &todos);
 
     if Path::new(build_path).exists() {
         std::fs::remove_dir_all(build_path).expect("couldn't remove existing build directory");
     }
 
+    let tera = Tera::new(&format!("{templates_path}/*.html"))?;
     tree.render(&tera, build_path)?;
 
     std::process::Command::new("/bin/sh")
-        .args(["-c", "cp -r static/* build"])
+        .args(["-c", &format!("cp -r {static_path}/* {build_path}")])
         .output()
         .expect("failed to execute process");
     println!("done");

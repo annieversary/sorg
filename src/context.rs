@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fs::File,
     io::{Read, Write},
     path::Path,
@@ -10,17 +11,43 @@ use orgize::{
     indextree::NodeEdge,
     Element, Event, Headline, Org,
 };
+use serde_derive::Serialize;
 use slugmin::slugify;
 use tera::Context;
 
 use crate::page::Page;
 
+#[derive(Serialize)]
+struct PageLink<'a> {
+    title: &'a str,
+    slug: Cow<'a, str>,
+    description: Option<Cow<'a, str>>,
+}
+
 pub fn get_index_context<'a>(headline: &Headline, org: &Org<'a>, children: &[Page]) -> Context {
     let pages = children
         .iter()
-        .map(|h| h.headline.title(org).raw.to_owned())
-        .map(|h| (slugify(&h), h))
-        .map(|(slug, title)| format!("<a href=\"{slug}\">{title}</a>"))
+        .map(|h| {
+            let t = h.headline.title(org);
+            let title = t.raw.as_ref();
+            let slug = t
+                .properties
+                .iter()
+                .find(|(n, _)| n == "slug")
+                .map(|a| a.1.clone())
+                .unwrap_or_else(|| Cow::Owned(slugify(title)));
+            let description = t
+                .properties
+                .iter()
+                .find(|(n, _)| n == "description")
+                .map(|a| a.1.clone());
+
+            PageLink {
+                slug,
+                title,
+                description,
+            }
+        })
         .collect::<Vec<_>>();
 
     let title = headline.title(org);

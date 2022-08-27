@@ -5,6 +5,10 @@
 
 {{ content | safe }}
 
-{{ pages | safe }}
+<ul>
+  {% for page in pages %}
+  <li><a href="{{ page.slug }}">{{ page.title }}</a>{%if page.description%} - {%endif%}{{ page.description }}</li>
+  {% endfor %}
+</ul>
 
 {% endblock content %}
