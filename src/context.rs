@@ -7,7 +7,7 @@ use std::{
 
 use color_eyre::{eyre::WrapErr, Report, Result};
 use orgize::{
-    export::{DefaultHtmlHandler, HtmlHandler},
+    export::{DefaultHtmlHandler, HtmlHandler, SyntectHtmlHandler},
     indextree::NodeEdge,
     Element, Event, Headline, Org,
 };
@@ -86,14 +86,12 @@ pub fn get_post_context<'a>(headline: &Headline, org: &Org<'a>) -> Context {
     let mut context = Context::new();
     context.insert("title", &title.raw);
 
-    let html = write_html(
-        headline,
-        org,
-        PostHtmlHandler {
-            level: headline.level(),
-            ..Default::default()
-        },
-    );
+    let mut handler = PostHtmlHandler {
+        level: headline.level(),
+        ..Default::default()
+    };
+    handler.handler.theme = "Solarized (light)".into();
+    let html = write_html(headline, org, handler);
 
     context.insert("content", &html);
     context.insert("sections", &sections);
@@ -184,7 +182,7 @@ pub fn write_html<'a>(
 
 #[derive(Default)]
 struct IndexHtmlHandler {
-    handler: DefaultHtmlHandler,
+    handler: SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler>,
     level: usize,
     in_headline: bool,
     in_page_title: bool,
@@ -228,7 +226,7 @@ impl HtmlHandler<Report> for IndexHtmlHandler {
 
 #[derive(Default)]
 struct PostHtmlHandler {
-    handler: DefaultHtmlHandler,
+    handler: SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler>,
     level: usize,
     in_page_title: bool,
 }

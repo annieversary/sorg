@@ -34,7 +34,24 @@ CLOSED: [2022-05-09 Mon 00:17]
 this is a finished post
 it will use the CLOSED: thing as the date of publish
 **** this is a headline
-with some stuff
+with some stuff, even some code:
+
+#+begin_src rust
+#[derive(Default)]
+struct PostHtmlHandler {
+    handler: SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler>,
+    level: usize,
+    in_page_title: bool,
+}
+#+end_src
+
+*and a list*
+
+- with
+- a
+- few
+- items
+
 **** this is another headline
 **** TODO and another one
 this one does have text, and it's marked as /TODO/, which does *not* show up on the rendered html
