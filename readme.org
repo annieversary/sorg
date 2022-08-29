@@ -1,0 +1,17 @@
+* sorg
+sorg is a wip static site generator that uses a single org file as source
+
+look at =examples/blog.org= to see an example source file
+** faq
+*** why?
+idk i have a thing against opening multiple files. besides emacs lets me collapse parts of the tree i dont care about or even just narrow the view to a single subtree, so having a big file is not a problem
+*** why not pandoc/ox-hugo/others?
+nothing i found let me have this behavior of rendering each subtree into it's own page *except* posts, which i want to be a single page
+*** why not write something in emacs lisp?
+lol
+** using
+write a file called =blog.org= and run =cargo run=. output will be on =build=
+
+if you want to try it, go on =examples= and do =cargo run && python3 -m "http.server" --directory build= or something similar to serve the folder
+
+i'll write an actual tutorial when this is more complete
