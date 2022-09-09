@@ -3,5 +3,7 @@
 {% block content %}
 <h1>{{ title }}</h1>
 
+{% if date %}{{ date.year ~ "/" ~ date.month ~ "/" ~ date.day }}{% endif %}
+
 {{ content | safe }}
 {% endblock content %}
