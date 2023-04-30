@@ -25,7 +25,7 @@ struct PageLink<'a> {
     description: Option<Cow<'a, str>>,
 }
 
-pub fn get_index_context<'a>(headline: &Headline, org: &Org<'a>, children: &[Page]) -> Context {
+pub fn get_index_context(headline: &Headline, org: &Org<'_>, children: &[Page]) -> Context {
     let pages = children
         .iter()
         .map(|h| {
@@ -77,10 +77,10 @@ pub fn get_index_context<'a>(headline: &Headline, org: &Org<'a>, children: &[Pag
 /// generates the context for a blog post
 ///
 /// renders the contents and gets the sections and stuff
-pub fn get_post_context<'a>(headline: &Headline, org: &Org<'a>) -> Context {
+pub fn get_post_context(headline: &Headline, org: &Org<'_>) -> Context {
     let sections = headline
         .children(org)
-        .map(|h| h.title(org).raw.to_owned())
+        .map(|h| h.title(org).raw.clone())
         .collect::<Vec<_>>();
 
     let title = headline.title(org);
@@ -120,7 +120,7 @@ pub fn get_org_file_context<'a>(
 ) -> Result<Context> {
     let sections = headline
         .children(org)
-        .map(|h| h.title(org).raw.to_owned())
+        .map(|h| h.title(org).raw.clone())
         .collect::<Vec<_>>();
 
     let title = headline.title(org);
@@ -162,9 +162,9 @@ pub fn get_org_file_context<'a>(
 }
 
 /// renders html for a post
-pub fn write_html<'a>(
+pub fn write_html(
     headline: &Headline,
-    org: &Org<'a>,
+    org: &Org<'_>,
     mut handler: impl HtmlHandler<Report>,
 ) -> String {
     let it = headline
