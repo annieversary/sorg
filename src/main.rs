@@ -45,6 +45,12 @@ fn main() -> Result<()> {
     let static_path = keywords.get("static").unwrap_or(&"static");
     let templates_path = keywords.get("templates").unwrap_or(&"templates");
 
+    let config = Config {
+        build_path: build_path.to_string(),
+        static_path: static_path.to_string(),
+        templates_path: templates_path.to_string(),
+    };
+
     let doc = org.document();
 
     let first = doc.first_child(&org).unwrap();
@@ -58,7 +64,7 @@ fn main() -> Result<()> {
     let mut tera = Tera::new(&format!("{templates_path}/*.html"))?;
     tera.register_function("get_pages", tera_functions::make_get_pages(&tree));
 
-    tree.render(&tera, build_path)?;
+    tree.render(&tera, build_path, &config)?;
 
     std::process::Command::new("/bin/sh")
         .args(["-c", &format!("cp -r {static_path}/* {build_path}")])
@@ -70,3 +76,11 @@ fn main() -> Result<()> {
 }
 
 pub type Keywords = (Vec<String>, Vec<String>);
+
+#[derive(Default, Clone)]
+#[allow(dead_code)]
+pub struct Config {
+    build_path: String,
+    static_path: String,
+    templates_path: String,
+}

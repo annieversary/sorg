@@ -17,7 +17,7 @@ use serde_derive::Serialize;
 use slugmin::slugify;
 use tera::Context;
 
-use crate::page::Page;
+use crate::{page::Page, Config};
 
 #[derive(Serialize, Debug)]
 struct PageLink<'a> {
@@ -30,6 +30,7 @@ pub fn get_index_context(
     headline: &Headline,
     org: &Org<'_>,
     children: &HashMap<String, Page>,
+    config: &Config,
 ) -> Context {
     let pages = children
         .iter()
@@ -57,6 +58,11 @@ pub fn get_index_context(
         org,
         IndexHtmlHandler {
             level: headline.level(),
+            handler: CommonHtmlHandler {
+                handler: DefaultHtmlHandler,
+                config: config.clone(),
+                ..Default::default()
+            },
             ..Default::default()
         },
     );
@@ -76,7 +82,7 @@ pub fn get_index_context(
 /// generates the context for a blog post
 ///
 /// renders the contents and gets the sections and stuff
-pub fn get_post_context(headline: &Headline, org: &Org<'_>) -> Context {
+pub fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> Context {
     let sections = headline
         .children(org)
         .map(|h| h.title(org).raw.clone())
@@ -98,6 +104,11 @@ pub fn get_post_context(headline: &Headline, org: &Org<'_>) -> Context {
 
     let handler = PostHtmlHandler {
         level: headline.level(),
+        handler: CommonHtmlHandler {
+            handler: DefaultHtmlHandler,
+            config: config.clone(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     // handler.handler.theme = "Solarized (light)".into();
@@ -112,7 +123,12 @@ pub fn get_post_context(headline: &Headline, org: &Org<'_>) -> Context {
 
     context
 }
-pub fn get_org_file_context(headline: &Headline, org: &Org<'_>, file: &Path) -> Result<Context> {
+pub fn get_org_file_context(
+    headline: &Headline,
+    org: &Org<'_>,
+    file: &Path,
+    config: &Config,
+) -> Result<Context> {
     let sections = headline
         .children(org)
         .map(|h| h.title(org).raw.clone())
@@ -142,6 +158,11 @@ pub fn get_org_file_context(headline: &Headline, org: &Org<'_>, file: &Path) -> 
         &new_org,
         PostHtmlHandler {
             level: first.level(),
+            handler: CommonHtmlHandler {
+                handler: DefaultHtmlHandler,
+                config: config.clone(),
+                ..Default::default()
+            },
             ..Default::default()
         },
     );
@@ -188,7 +209,7 @@ pub fn write_html(
 
 #[derive(Default)]
 struct IndexHtmlHandler {
-    handler: DefaultHtmlHandler,
+    handler: CommonHtmlHandler,
     // handler: SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler>,
     level: usize,
     in_headline: bool,
@@ -248,8 +269,6 @@ impl HtmlHandler<Report> for PostHtmlHandler {
                 self.in_page_title = true;
             }
             Element::Title(title) => {
-                dbg!(&self.handler.attributes);
-                dbg!(&title.raw);
                 write!(
                     w,
                     "<h{0} {2}><a id=\"{1}\" href=\"#{1}\">",
@@ -288,6 +307,7 @@ impl HtmlHandler<Report> for PostHtmlHandler {
 #[derive(Default)]
 struct CommonHtmlHandler {
     handler: DefaultHtmlHandler,
+    config: Config,
 
     attributes: HashMap<String, String>,
 }
@@ -343,6 +363,8 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
 
             Element::Link(link) => {
                 let path = link.path.trim_start_matches("file:");
+                let path =
+                    path.trim_start_matches(format!("./{}", self.config.static_path).as_str());
                 let attrs = self.render_attributes("");
 
                 if path.ends_with(".jpg")

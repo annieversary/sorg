@@ -8,7 +8,7 @@ use crate::{
     context::*,
     helpers::parse_file_link,
     template::{get_template, render_template},
-    Keywords,
+    Config, Keywords,
 };
 
 #[derive(Debug)]
@@ -98,16 +98,20 @@ impl<'a> Page<'a> {
         }
     }
 
-    pub fn render(&self, tera: &'a Tera, out: &str) -> Result<()> {
+    pub fn render(&self, tera: &'a Tera, out: &str, config: &Config) -> Result<()> {
         let title = self.headline.title(self.org);
         let properties = title.properties.clone().into_hash_map();
         let name = &title.raw;
 
         let out_path = get_out(title, out);
         let context = match &self.page {
-            PageEnum::Index { children } => get_index_context(&self.headline, self.org, children),
-            PageEnum::Post => get_post_context(&self.headline, self.org),
-            PageEnum::OrgFile { path } => get_org_file_context(&self.headline, self.org, path)?,
+            PageEnum::Index { children } => {
+                get_index_context(&self.headline, self.org, children, config)
+            }
+            PageEnum::Post => get_post_context(&self.headline, self.org, config),
+            PageEnum::OrgFile { path } => {
+                get_org_file_context(&self.headline, self.org, path, config)?
+            }
         };
         let template = get_template(
             tera,
@@ -121,7 +125,7 @@ impl<'a> Page<'a> {
 
         if let PageEnum::Index { children } = &self.page {
             for child in children.values() {
-                child.render(tera, &out_path)?;
+                child.render(tera, &out_path, config)?;
             }
         }
         Ok(())
