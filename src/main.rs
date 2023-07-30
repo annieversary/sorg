@@ -7,6 +7,7 @@ mod context;
 mod helpers;
 mod page;
 mod template;
+mod tera_functions;
 
 use page::*;
 
@@ -26,7 +27,7 @@ fn main() -> Result<()> {
             "MAYBE".to_string(),
             "CANCELLED".to_string(),
         ],
-        vec!["DONE".to_string()],
+        vec!["DONE".to_string(), "READ".to_string()],
     );
 
     let org = Org::parse_custom(
@@ -54,7 +55,9 @@ fn main() -> Result<()> {
         std::fs::remove_dir_all(build_path).expect("couldn't remove existing build directory");
     }
 
-    let tera = Tera::new(&format!("{templates_path}/*.html"))?;
+    let mut tera = Tera::new(&format!("{templates_path}/*.html"))?;
+    tera.register_function("get_pages", tera_functions::make_get_pages(&tree));
+
     tree.render(&tera, build_path)?;
 
     std::process::Command::new("/bin/sh")

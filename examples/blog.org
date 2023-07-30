@@ -6,6 +6,9 @@
 
 * index
 hello this is my website hi hi hello
+
+#+ATTR_HTML: :style color:red;
+this text will be red :3
 ** about
 i am me and this is a page on my website
 

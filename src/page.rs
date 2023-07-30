@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use orgize::{Headline, Org};
+use orgize::{elements::Title, Headline, Org};
 use slugmin::slugify;
 use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 use tera::Tera;
@@ -11,8 +11,9 @@ use crate::{
     Keywords,
 };
 
+#[derive(Debug)]
 pub enum PageEnum<'a> {
-    Index { children: Vec<Page<'a>> },
+    Index { children: HashMap<String, Page<'a>> },
     Post,
     OrgFile { path: PathBuf },
 }
@@ -20,7 +21,21 @@ pub enum PageEnum<'a> {
 pub struct Page<'a> {
     pub headline: Headline,
     org: &'a Org<'a>,
-    page: PageEnum<'a>,
+
+    pub slug: String,
+    pub title: String,
+
+    pub page: PageEnum<'a>,
+}
+
+impl<'a> std::fmt::Debug for Page<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Page")
+            // .field("headline", &self.headline)
+            .field("slug", &self.slug)
+            .field("page", &self.page)
+            .finish()
+    }
 }
 
 impl<'a> Page<'a> {
@@ -32,6 +47,8 @@ impl<'a> Page<'a> {
                 if title.tags.contains(&Cow::Borrowed("noexport")) {
                     return None;
                 }
+
+                let slug = get_slug(title);
 
                 if title.tags.contains(&Cow::Borrowed("post")) {
                     // if there's a keyword, and it's in PROGRESS, we skip it
@@ -52,6 +69,8 @@ impl<'a> Page<'a> {
                                 headline: page,
                                 org,
                                 page: PageEnum::OrgFile { path: link.into() },
+                                slug,
+                                title: title.raw.to_string(),
                             });
                         }
                     }
@@ -60,17 +79,22 @@ impl<'a> Page<'a> {
                         headline: page,
                         org,
                         page: PageEnum::Post,
+                        slug,
+                        title: title.raw.to_string(),
                     })
                 } else {
                     Some(Self::parse_index(org, page, keywords))
                 }
             })
+            .map(|p| (p.slug.clone(), p))
             .collect();
 
         Page {
             headline,
             org,
             page: PageEnum::Index { children },
+            slug: get_slug(headline.title(org)),
+            title: headline.title(org).raw.to_string(),
         }
     }
 
@@ -79,7 +103,7 @@ impl<'a> Page<'a> {
         let properties = title.properties.clone().into_hash_map();
         let name = &title.raw;
 
-        let out_path = get_out(&properties, name, out);
+        let out_path = get_out(title, out);
         let context = match &self.page {
             PageEnum::Index { children } => get_index_context(&self.headline, self.org, children),
             PageEnum::Post => get_post_context(&self.headline, self.org),
@@ -96,7 +120,7 @@ impl<'a> Page<'a> {
         render_template(tera, &template, &context, &out_path)?;
 
         if let PageEnum::Index { children } = &self.page {
-            for child in children {
+            for child in children.values() {
                 child.render(tera, &out_path)?;
             }
         }
@@ -104,15 +128,22 @@ impl<'a> Page<'a> {
     }
 }
 
-fn get_out<'a>(properties: &HashMap<Cow<'a, str>, Cow<'a, str>>, name: &str, out: &str) -> String {
-    let f = if let Some(prop) = properties.get("slug") {
-        prop.clone()
+fn get_slug(title: &Title) -> String {
+    let properties = title.properties.clone().into_hash_map();
+    let name = &title.raw;
+
+    if let Some(prop) = properties.get("slug") {
+        prop.to_string()
     } else {
-        Cow::Owned(slugify(name))
-    };
-    if f == "index" {
+        slugify(name)
+    }
+}
+
+fn get_out(title: &Title, out: &str) -> String {
+    let slug = get_slug(title);
+    if slug == "index" {
         out.to_string()
     } else {
-        format!("{out}/{f}")
+        format!("{out}/{slug}")
     }
 }
