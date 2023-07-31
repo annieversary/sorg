@@ -1,16 +1,23 @@
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs::File,
     io::{Read, Write},
+    marker::PhantomData,
     path::Path,
+    sync::OnceLock,
 };
 
 use color_eyre::{eyre::WrapErr, Report, Result};
 use orgize::{
     elements::{Link, Timestamp},
-    export::{DefaultHtmlHandler, HtmlEscape, HtmlHandler},
+    export::{DefaultHtmlHandler, HtmlEscape, HtmlHandler, SyntectHtmlHandler},
     indextree::NodeEdge,
+    syntect::{
+        highlighting::{Theme, ThemeSet},
+        html::IncludeBackground,
+        parsing::SyntaxSet,
+    },
     Element, Event, Headline, Org,
 };
 use serde_derive::Serialize;
@@ -19,11 +26,34 @@ use tera::Context;
 
 use crate::{page::Page, Config};
 
+static SYNTECT: OnceLock<(SyntaxSet, BTreeMap<String, Theme>)> = OnceLock::new();
+
 #[derive(Serialize, Debug)]
 struct PageLink<'a> {
     title: &'a str,
     slug: String,
     description: Option<Cow<'a, str>>,
+}
+
+fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
+    let (syntax_set, themes) = SYNTECT.get_or_init(|| {
+        println!("loading");
+        (
+            SyntaxSet::load_defaults_newlines(),
+            ThemeSet::load_defaults().themes,
+        )
+    });
+
+    SyntectHtmlHandler {
+        syntax_set: syntax_set.clone(),
+        theme_set: ThemeSet {
+            themes: themes.clone(),
+        },
+        theme: String::from("InspiredGitHub"),
+        inner: DefaultHtmlHandler,
+        background: IncludeBackground::No,
+        error_type: PhantomData,
+    }
 }
 
 pub fn get_index_context(
@@ -59,11 +89,12 @@ pub fn get_index_context(
         IndexHtmlHandler {
             level: headline.level(),
             handler: CommonHtmlHandler {
-                handler: DefaultHtmlHandler,
+                handler: html_handler(),
                 config: config.clone(),
-                ..Default::default()
+                attributes: Default::default(),
             },
-            ..Default::default()
+            in_headline: false,
+            in_page_title: false,
         },
     );
 
@@ -114,11 +145,11 @@ pub fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> 
     let handler = PostHtmlHandler {
         level: headline.level(),
         handler: CommonHtmlHandler {
-            handler: DefaultHtmlHandler,
+            handler: html_handler(),
             config: config.clone(),
-            ..Default::default()
+            attributes: Default::default(),
         },
-        ..Default::default()
+        in_page_title: false,
     };
     // handler.handler.theme = "Solarized (light)".into();
     let html = write_html(headline, org, handler);
@@ -168,17 +199,17 @@ pub fn get_org_file_context(
         PostHtmlHandler {
             level: first.level(),
             handler: CommonHtmlHandler {
-                handler: DefaultHtmlHandler,
+                handler: html_handler(),
                 config: config.clone(),
-                ..Default::default()
+                attributes: Default::default(),
             },
-            ..Default::default()
+            in_page_title: false,
         },
     );
 
     context.insert("content", &html);
     context.insert("sections", &sections);
-    let word_count = count_words_post(&first, &org);
+    let word_count = count_words_post(&first, org);
     context.insert("word_count", &word_count);
     context.insert("reading_time", &(word_count / 180));
 
@@ -299,7 +330,6 @@ pub fn write_html(
 #[derive(Default)]
 struct IndexHtmlHandler {
     handler: CommonHtmlHandler,
-    // handler: SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler>,
     level: usize,
     in_headline: bool,
     in_page_title: bool,
@@ -347,7 +377,6 @@ impl HtmlHandler<Report> for IndexHtmlHandler {
 #[derive(Default)]
 struct PostHtmlHandler {
     handler: CommonHtmlHandler,
-    // handler: SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler>,
     level: usize,
     in_page_title: bool,
 }
@@ -396,7 +425,7 @@ impl HtmlHandler<Report> for PostHtmlHandler {
 
 #[derive(Default)]
 struct CommonHtmlHandler {
-    handler: DefaultHtmlHandler,
+    handler: SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler>,
     config: Config,
 
     attributes: HashMap<String, String>,
