@@ -1,4 +1,5 @@
-use color_eyre::Result;
+use clap::Parser;
+use color_eyre::{eyre::Context, Result};
 use orgize::{Org, ParseConfig};
 use std::{collections::HashMap, fs::File, io::Read, path::Path};
 use tera::Tera;
@@ -11,13 +12,27 @@ mod tera_functions;
 
 use page::*;
 
+/// Generate static site out of a single Org-mode file
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the blog org-mode file
+    #[arg(default_value = "./blog.org")]
+    blog: String,
+    #[arg(short, long)]
+    verbose: bool,
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    // TODO this file should come from args
-    let mut f = File::open("./blog.org")?;
+    let args = Args::parse();
+
+    let path = args.blog;
+    let mut f = File::open(&path).with_context(|| format!("{path} was not found"))?;
     let mut src = String::new();
-    f.read_to_string(&mut src)?;
+    f.read_to_string(&mut src)
+        .with_context(|| format!("failed to read {path}"))?;
 
     let todos = (
         vec![
@@ -49,6 +64,7 @@ fn main() -> Result<()> {
         build_path: build_path.to_string(),
         static_path: static_path.to_string(),
         templates_path: templates_path.to_string(),
+        verbose: args.verbose,
     };
 
     let doc = org.document();
@@ -70,7 +86,10 @@ fn main() -> Result<()> {
         .args(["-c", &format!("cp -r {static_path}/* {build_path}")])
         .output()
         .expect("failed to execute process");
-    println!("done");
+
+    if config.verbose {
+        println!("done");
+    }
 
     Ok(())
 }
@@ -83,4 +102,5 @@ pub struct Config {
     build_path: String,
     static_path: String,
     templates_path: String,
+    verbose: bool,
 }

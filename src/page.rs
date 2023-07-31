@@ -120,7 +120,10 @@ impl<'a> Page<'a> {
             matches!(self.page, PageEnum::Index { .. }),
         );
 
-        println!("writing {out_path}");
+        if config.verbose {
+            println!("writing {out_path}");
+        }
+
         render_template(tera, &template, &context, &out_path)?;
 
         if let PageEnum::Index { children } = &self.page {
