@@ -1,4 +1,4 @@
-use color_eyre::Result;
+use color_eyre::{eyre::Context, Result};
 use orgize::{elements::Title, Headline, Org};
 use slugmin::slugify;
 use std::{borrow::Cow, collections::HashMap, path::PathBuf};
@@ -113,6 +113,7 @@ impl<'a> Page<'a> {
                 get_org_file_context(&self.headline, self.org, path, config)?
             }
         };
+
         let template = get_template(
             tera,
             &properties,
@@ -124,7 +125,8 @@ impl<'a> Page<'a> {
             println!("writing {out_path}");
         }
 
-        render_template(tera, &template, &context, &out_path)?;
+        render_template(tera, &template, &context, &out_path)
+            .with_context(|| format!("rendering {}", title.raw))?;
 
         if let PageEnum::Index { children } = &self.page {
             for child in children.values() {

@@ -8,7 +8,7 @@ use std::{
 
 use color_eyre::{eyre::WrapErr, Report, Result};
 use orgize::{
-    elements::Timestamp,
+    elements::{Link, Timestamp},
     export::{DefaultHtmlHandler, HtmlEscape, HtmlHandler},
     indextree::NodeEdge,
     Element, Event, Headline, Org,
@@ -71,6 +71,9 @@ pub fn get_index_context(
     context.insert("title", &title.raw);
     context.insert("content", &html);
     context.insert("pages", &pages);
+    let word_count = count_words_index(headline, org);
+    context.insert("word_count", &word_count);
+    context.insert("reading_time", &(word_count / 180));
 
     for (k, v) in headline.title(org).properties.iter() {
         context.insert(k.clone(), v);
@@ -100,7 +103,13 @@ pub fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> 
 
     let mut context = Context::new();
     context.insert("title", &title.raw);
-    context.insert("date", &closed);
+    context.insert(
+        "date",
+        &closed.map(|d| format!("{}-{}-{}", d.year, d.month, d.day)),
+    );
+    let word_count = count_words_post(headline, org);
+    context.insert("word_count", &word_count);
+    context.insert("reading_time", &(word_count / 180));
 
     let handler = PostHtmlHandler {
         level: headline.level(),
@@ -169,12 +178,92 @@ pub fn get_org_file_context(
 
     context.insert("content", &html);
     context.insert("sections", &sections);
+    let word_count = count_words_post(&first, &org);
+    context.insert("word_count", &word_count);
+    context.insert("reading_time", &(word_count / 180));
 
     for (k, v) in headline.title(org).properties.iter() {
         context.insert(k.clone(), v);
     }
 
     Ok(context)
+}
+
+fn count_words_index(headline: &Headline, org: &Org<'_>) -> usize {
+    // dont count children headlines, just the actual text on this page
+    let it = headline
+        .headline_node()
+        .traverse(org.arena())
+        .map(move |edge| match edge {
+            NodeEdge::Start(node) => Event::Start(&org[node]),
+            NodeEdge::End(node) => Event::End(&org[node]),
+        });
+
+    let mut v = 0;
+    let mut in_subheadline = false;
+    let mut in_headline = false;
+    let mut in_page_title = false;
+
+    for event in it {
+        // println!("sub: {in_subheadline}, head: {in_headline}, title: {in_page_title}");
+        match event {
+            Event::Start(element) if !in_headline => match element {
+                Element::Headline { level } if *level > headline.level() + 1 => {
+                    in_headline = true;
+                }
+                Element::Headline { level } if *level > headline.level() => {
+                    in_subheadline = true;
+                }
+                Element::Title(_) => {
+                    in_page_title = true;
+                }
+                _ if !in_subheadline || in_page_title => {
+                    // count this element
+                    v += match element {
+                        Element::Text { value } => words_count::count(value).words,
+                        Element::Link(Link {
+                            desc: Some(value), ..
+                        }) => words_count::count(value).words,
+                        _ => 0,
+                    };
+                }
+                // while we are in a title, we'll land here, cause we dont want to show the child posts
+                _ => {}
+            },
+            Event::End(element) => match element {
+                Element::Headline { level } if *level > headline.level() + 1 => {
+                    in_headline = false;
+                }
+                Element::Headline { level } if *level > headline.level() => {
+                    in_subheadline = false;
+                }
+                Element::Title(_) => {
+                    in_page_title = false;
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    v
+}
+fn count_words_post(headline: &Headline, org: &Org<'_>) -> usize {
+    headline
+        .headline_node()
+        .traverse(org.arena())
+        .flat_map(move |edge| match edge {
+            NodeEdge::Start(node) => Some(&org[node]),
+            NodeEdge::End(_) => None,
+        })
+        .map(|el| match el {
+            Element::Text { value } => words_count::count(value).words,
+            Element::Link(Link {
+                desc: Some(value), ..
+            }) => words_count::count(value).words,
+            _ => 0,
+        })
+        .sum()
 }
 
 /// renders html for a post
@@ -231,6 +320,7 @@ impl HtmlHandler<Report> for IndexHtmlHandler {
                 // fallthrough to default handler
                 self.handler.start(w, element)?;
             }
+            // while we are in a title, we'll land here, cause we dont want to show the child posts
             _ => {}
         }
         Ok(())

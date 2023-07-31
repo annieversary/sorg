@@ -1043,6 +1043,7 @@ dependencies = [
  "serde_derive",
  "slugmin",
  "tera",
+ "words-count",
 ]
 
 [[package]]
@@ -1251,6 +1252,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicode-blocks"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c84398c527c802fbf222e5145f220382d60f1878e0e6cb4d22a3080949a8ddcd"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1393,6 +1400,15 @@ name = "windows_x86_64_msvc"
 version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
+
+[[package]]
+name = "words-count"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c569acc49de9affbc9ace57633381bad6d3e9c648605206d082deb7aa62e8cf5"
+dependencies = [
+ "unicode-blocks",
+]
 
 [[package]]
 name = "xml-rs"
