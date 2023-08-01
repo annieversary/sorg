@@ -7,7 +7,7 @@ use crate::page::{Page, PageEnum};
 pub fn make_get_pages(root: &'_ Page<'_>) -> impl tera::Function {
     let mut map = HashMap::new();
 
-    add(root, &mut map, "".to_string());
+    add(root, &mut map);
 
     Box::new(
         move |args: &HashMap<String, Value>| -> tera::Result<Value> {
@@ -39,27 +39,17 @@ struct Link {
     title: String,
 }
 
-fn add(page: &Page<'_>, map: &mut HashMap<String, Link>, mut path: String) {
-    if page.slug != "index" {
-        path = format!("{path}/{}", page.slug);
-    }
-
-    let p = if path.is_empty() {
-        "/".to_string()
-    } else {
-        path.clone()
-    };
-
+fn add(page: &Page<'_>, map: &mut HashMap<String, Link>) {
     map.insert(
-        p.clone(),
+        page.path.clone(),
         Link {
-            link: p,
+            link: page.path.clone(),
             title: page.title.clone(),
         },
     );
     if let PageEnum::Index { children } = &page.page {
         for child in children.values() {
-            add(child, map, path.clone());
+            add(child, map);
         }
     }
 }
