@@ -37,7 +37,6 @@ struct PageLink<'a> {
 
 fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
     let (syntax_set, themes) = SYNTECT.get_or_init(|| {
-        println!("loading");
         (
             SyntaxSet::load_defaults_newlines(),
             ThemeSet::load_defaults().themes,
@@ -104,7 +103,7 @@ pub fn get_index_context(
     context.insert("pages", &pages);
     let word_count = count_words_index(headline, org);
     context.insert("word_count", &word_count);
-    context.insert("reading_time", &(word_count / 180));
+    context.insert("reading_time", &(word_count / 180).max(1));
 
     for (k, v) in headline.title(org).properties.iter() {
         context.insert(k.clone(), v);
@@ -140,7 +139,7 @@ pub fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> 
     );
     let word_count = count_words_post(headline, org);
     context.insert("word_count", &word_count);
-    context.insert("reading_time", &(word_count / 180));
+    context.insert("reading_time", &(word_count / 180).max(1));
 
     let handler = PostHtmlHandler {
         level: headline.level(),
@@ -211,7 +210,7 @@ pub fn get_org_file_context(
     context.insert("sections", &sections);
     let word_count = count_words_post(&first, org);
     context.insert("word_count", &word_count);
-    context.insert("reading_time", &(word_count / 180));
+    context.insert("reading_time", &(word_count / 180).max(1));
 
     for (k, v) in headline.title(org).properties.iter() {
         context.insert(k.clone(), v);
