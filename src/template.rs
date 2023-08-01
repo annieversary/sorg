@@ -8,9 +8,15 @@ use tera::{Context, Tera};
 pub fn get_template<'a>(
     tera: &Tera,
     properties: &HashMap<Cow<'a, str>, Cow<'a, str>>,
-    name: &str,
+    path: &str,
     index: bool,
 ) -> Cow<'a, str> {
+    let path = if path == "/" {
+        "index"
+    } else {
+        path.trim_start_matches('/')
+    };
+
     // use template set in properties
     if let Some(template) = properties.get("template") {
         template.clone()
@@ -18,9 +24,9 @@ pub fn get_template<'a>(
     // use $name.html as a template
     else if tera
         .get_template_names()
-        .any(|x| x == format!("{name}.html"))
+        .any(|x| x == format!("{path}.html"))
     {
-        Cow::Owned(format!("{name}.html"))
+        Cow::Owned(format!("{path}.html"))
     } else if index {
         Cow::Borrowed("default_index.html")
     }

@@ -24,6 +24,7 @@ pub struct Page<'a> {
 
     pub slug: String,
     pub title: String,
+    pub path: String,
 
     pub page: PageEnum<'a>,
 }
@@ -39,7 +40,17 @@ impl<'a> std::fmt::Debug for Page<'a> {
 }
 
 impl<'a> Page<'a> {
-    pub fn parse_index(org: &'a Org<'a>, headline: Headline, keywords: &Keywords) -> Self {
+    pub fn parse_index(
+        org: &'a Org<'a>,
+        headline: Headline,
+        keywords: &Keywords,
+        mut path: String,
+    ) -> Self {
+        let slug = get_slug(headline.title(org));
+        if slug != "index" {
+            path = format!("{path}/{}", slug);
+        }
+
         let children = headline
             .children(org)
             .filter_map(|page| -> Option<Page> {
@@ -69,6 +80,7 @@ impl<'a> Page<'a> {
                                 headline: page,
                                 org,
                                 page: PageEnum::OrgFile { path: link.into() },
+                                path: format!("{path}/{slug}"),
                                 slug,
                                 title: title.raw.to_string(),
                             });
@@ -79,21 +91,27 @@ impl<'a> Page<'a> {
                         headline: page,
                         org,
                         page: PageEnum::Post,
+                        path: format!("{path}/{slug}"),
                         slug,
                         title: title.raw.to_string(),
                     })
                 } else {
-                    Some(Self::parse_index(org, page, keywords))
+                    Some(Self::parse_index(org, page, keywords, path.clone()))
                 }
             })
             .map(|p| (p.slug.clone(), p))
             .collect();
 
+        if path.is_empty() {
+            path = "/".to_string();
+        }
+
         Page {
             headline,
             org,
             page: PageEnum::Index { children },
-            slug: get_slug(headline.title(org)),
+            slug,
+            path,
             title: headline.title(org).raw.to_string(),
         }
     }
@@ -101,7 +119,6 @@ impl<'a> Page<'a> {
     pub fn render(&self, tera: &'a Tera, out: &str, config: &Config) -> Result<()> {
         let title = self.headline.title(self.org);
         let properties = title.properties.clone().into_hash_map();
-        let name = &title.raw;
 
         let out_path = get_out(title, out);
         let context = match &self.page {
@@ -117,7 +134,7 @@ impl<'a> Page<'a> {
         let template = get_template(
             tera,
             &properties,
-            name,
+            &self.path,
             matches!(self.page, PageEnum::Index { .. }),
         );
 
