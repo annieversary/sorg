@@ -23,7 +23,6 @@ pub enum PageEnum<'a> {
 
 pub struct Page<'a> {
     pub headline: Headline,
-    org: &'a Org<'a>,
 
     pub slug: String,
     pub title: String,
@@ -114,7 +113,6 @@ impl<'a> Page<'a> {
                         if let Some(link) = parse_file_link(file) {
                             return Some(Page {
                                 headline: page,
-                                org,
                                 page: PageEnum::OrgFile { path: link.into() },
                                 path: format!("{path}/{slug}"),
                                 slug,
@@ -128,7 +126,6 @@ impl<'a> Page<'a> {
 
                     Some(Page {
                         headline: page,
-                        org,
                         page: PageEnum::Post,
                         path: format!("{path}/{slug}"),
                         slug,
@@ -150,7 +147,6 @@ impl<'a> Page<'a> {
 
         Page {
             headline,
-            org,
             page: PageEnum::Index { children },
             slug,
             path,
@@ -167,8 +163,8 @@ impl<'a> Page<'a> {
         }
     }
 
-    pub fn render(&self, tera: &'a Tera, out: &str, config: &Config) -> Result<()> {
-        let title = self.headline.title(self.org);
+    pub fn render(&self, tera: &'a Tera, out: &str, config: &Config, org: &Org) -> Result<()> {
+        let title = self.headline.title(org);
         let properties = title.properties.clone().into_hash_map();
 
         let out_path = if self.slug == "index" {
@@ -179,12 +175,10 @@ impl<'a> Page<'a> {
 
         let context = match &self.page {
             PageEnum::Index { children } => {
-                get_index_context(&self.headline, self.org, children, config)
+                get_index_context(&self.headline, org, children, config)
             }
-            PageEnum::Post => get_post_context(&self.headline, self.org, config, &self),
-            PageEnum::OrgFile { path } => {
-                get_org_file_context(&self.headline, self.org, path, config)?
-            }
+            PageEnum::Post => get_post_context(&self.headline, org, config, self),
+            PageEnum::OrgFile { path } => get_org_file_context(&self.headline, org, path, config)?,
         };
 
         let template = get_template(
@@ -203,7 +197,7 @@ impl<'a> Page<'a> {
 
         if let PageEnum::Index { children } = &self.page {
             for child in children.values() {
-                child.render(tera, &out_path, config)?;
+                child.render(tera, &out_path, config, org)?;
             }
         }
         Ok(())

@@ -10,7 +10,7 @@ use std::{
 
 use color_eyre::{eyre::WrapErr, Report, Result};
 use orgize::{
-    elements::Link,
+    elements::{FnDef, FnRef, Link},
     export::{DefaultHtmlHandler, HtmlEscape, HtmlHandler, SyntectHtmlHandler},
     indextree::NodeEdge,
     syntect::{
@@ -27,15 +27,6 @@ use tera::Context;
 use crate::{page::Page, Config};
 
 static SYNTECT: OnceLock<(SyntaxSet, BTreeMap<String, Theme>)> = OnceLock::new();
-
-#[derive(Serialize, Debug)]
-struct PageLink<'a> {
-    title: &'a str,
-    slug: &'a str,
-    description: Option<&'a str>,
-    order: usize,
-    closed_at: Option<String>,
-}
 
 fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
     let (syntax_set, themes) = SYNTECT.get_or_init(|| {
@@ -55,6 +46,15 @@ fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
         background: IncludeBackground::No,
         error_type: PhantomData,
     }
+}
+
+#[derive(Serialize, Debug)]
+struct PageLink<'a> {
+    title: &'a str,
+    slug: &'a str,
+    description: Option<&'a str>,
+    order: usize,
+    closed_at: Option<String>,
 }
 
 pub fn get_index_context(
@@ -89,6 +89,7 @@ pub fn get_index_context(
                 handler: html_handler(),
                 config: config.clone(),
                 attributes: Default::default(),
+                footnote_id: 0,
             },
             in_headline: false,
             in_page_title: false,
@@ -108,6 +109,68 @@ pub fn get_index_context(
     }
 
     context
+}
+
+#[derive(Serialize)]
+struct Footnote {
+    label: String,
+    definition: String,
+}
+
+fn get_footnotes(org: &Org<'_>, headline: &Headline) -> Vec<Footnote> {
+    let it = headline
+        .headline_node()
+        .traverse(org.arena())
+        .map(move |edge| match edge {
+            NodeEdge::Start(node) => Event::Start(&org[node]),
+            NodeEdge::End(node) => Event::End(&org[node]),
+        });
+
+    let mut footnotes = Vec::new();
+
+    let mut footnote_id = 0;
+    let mut in_footnote = None;
+
+    for event in it {
+        // println!("sub: {in_subheadline}, head: {in_headline}, title: {in_page_title}");
+        match event {
+            Event::Start(element) => match element {
+                Element::FnDef(FnDef { label, .. }) => {
+                    in_footnote = Some((label.to_string(), "".to_string()));
+                }
+                Element::FnRef(FnRef {
+                    label,
+                    definition: Some(def),
+                }) => {
+                    let label = if label.is_empty() {
+                        footnote_id += 1;
+                        footnote_id.to_string()
+                    } else {
+                        label.to_string()
+                    };
+                    footnotes.push(Footnote {
+                        label,
+                        definition: def.to_string(),
+                    });
+                }
+                Element::Text { value } if in_footnote.is_some() => {
+                    if let Some((_, def)) = &mut in_footnote {
+                        def.push_str(value);
+                    }
+                }
+                _ => {}
+            },
+            Event::End(element) => {
+                if let Element::FnDef(_) = element {
+                    if let Some((label, definition)) = in_footnote.take() {
+                        footnotes.push(Footnote { label, definition });
+                    }
+                }
+            }
+        }
+    }
+
+    footnotes
 }
 
 /// generates the context for a blog post
@@ -139,12 +202,16 @@ pub fn get_post_context(
     context.insert("word_count", &word_count);
     context.insert("reading_time", &(word_count / 180).max(1));
 
+    let footnotes = get_footnotes(org, headline);
+    context.insert("footnotes", &footnotes);
+
     let handler = PostHtmlHandler {
         level: headline.level(),
         handler: CommonHtmlHandler {
             handler: html_handler(),
             config: config.clone(),
             attributes: Default::default(),
+            footnote_id: 0,
         },
         in_page_title: false,
     };
@@ -199,6 +266,7 @@ pub fn get_org_file_context(
                 handler: html_handler(),
                 config: config.clone(),
                 attributes: Default::default(),
+                footnote_id: 0,
             },
             in_page_title: false,
         },
@@ -426,6 +494,7 @@ struct CommonHtmlHandler {
     config: Config,
 
     attributes: HashMap<String, String>,
+    footnote_id: usize,
 }
 
 impl CommonHtmlHandler {
@@ -450,6 +519,19 @@ impl CommonHtmlHandler {
 impl HtmlHandler<Report> for CommonHtmlHandler {
     fn start<W: Write>(&mut self, mut w: W, element: &Element) -> Result<()> {
         match element {
+            Element::FnRef(FnRef { label, .. }) => {
+                let label = if label.is_empty() {
+                    self.footnote_id += 1;
+                    Cow::Owned(format!("{}", self.footnote_id))
+                } else {
+                    label.clone()
+                };
+
+                write!(
+                    w,
+                    r##"<sup id="fnref-{label}"><a href="#fn-{label}" class="footnote-ref">{label}</a></sup>"##
+                )?;
+            }
             Element::Paragraph { .. } => write!(w, "<p {}>", self.render_attributes(""))?,
             Element::QuoteBlock(_) => write!(w, "<blockquote {}>", self.render_attributes(""))?,
             Element::CenterBlock(_) => write!(w, "<div {}>", self.render_attributes("center"))?,

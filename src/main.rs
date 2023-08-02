@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     let mut tera = Tera::new(&format!("{templates_path}/*.html"))?;
     tera.register_function("get_pages", tera_functions::make_get_pages(&tree));
 
-    tree.render(&tera, build_path, &config)?;
+    tree.render(&tera, build_path, &config, &org)?;
 
     std::process::Command::new("/bin/sh")
         .args(["-c", &format!("cp -r {static_path}/* {build_path}")])
