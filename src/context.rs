@@ -10,7 +10,7 @@ use std::{
 
 use color_eyre::{eyre::WrapErr, Report, Result};
 use orgize::{
-    elements::{Link, Timestamp},
+    elements::Link,
     export::{DefaultHtmlHandler, HtmlEscape, HtmlHandler, SyntectHtmlHandler},
     indextree::NodeEdge,
     syntect::{
@@ -33,6 +33,8 @@ struct PageLink<'a> {
     title: &'a str,
     slug: &'a str,
     description: Option<&'a str>,
+    order: usize,
+    closed_at: Option<String>,
 }
 
 fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
@@ -61,14 +63,20 @@ pub fn get_index_context(
     children: &HashMap<String, Page>,
     config: &Config,
 ) -> Context {
-    let pages = children
+    let mut pages = children
         .iter()
         .map(|(slug, page)| PageLink {
             slug,
             title: &page.title,
             description: page.description.as_deref(),
+            order: page.order,
+            closed_at: page
+                .closed_at
+                .as_ref()
+                .map(|d| format!("{}-{}-{}", d.year, d.month, d.day)),
         })
         .collect::<Vec<_>>();
+    pages.sort_unstable_by(|a, b| a.order.cmp(&b.order));
 
     let title = headline.title(org);
 
@@ -105,7 +113,12 @@ pub fn get_index_context(
 /// generates the context for a blog post
 ///
 /// renders the contents and gets the sections and stuff
-pub fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> Context {
+pub fn get_post_context(
+    headline: &Headline,
+    org: &Org<'_>,
+    config: &Config,
+    page: &Page,
+) -> Context {
     let sections = headline
         .children(org)
         .map(|h| h.title(org).raw.clone())
@@ -113,19 +126,14 @@ pub fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> 
 
     let title = headline.title(org);
 
-    let closed = title.closed().and_then(|c| {
-        if let Timestamp::Inactive { start, .. } = c {
-            Some(start)
-        } else {
-            None
-        }
-    });
-
     let mut context = Context::new();
     context.insert("title", &title.raw);
     context.insert(
         "date",
-        &closed.map(|d| format!("{}-{}-{}", d.year, d.month, d.day)),
+        &page
+            .closed_at
+            .as_ref()
+            .map(|d| format!("{}-{}-{}", d.year, d.month, d.day)),
     );
     let word_count = count_words_post(headline, org);
     context.insert("word_count", &word_count);

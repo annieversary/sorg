@@ -71,7 +71,7 @@ fn main() -> Result<()> {
 
     let first = doc.first_child(&org).unwrap();
 
-    let tree = Page::parse_index(&org, first, &todos, "".to_string());
+    let tree = Page::parse_index(&org, first, &todos, "".to_string(), 0);
 
     if Path::new(build_path).exists() {
         std::fs::remove_dir_all(build_path).expect("couldn't remove existing build directory");

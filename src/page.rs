@@ -1,5 +1,8 @@
 use color_eyre::{eyre::Context, Result};
-use orgize::{elements::Title, Headline, Org};
+use orgize::{
+    elements::{Datetime, Timestamp, Title},
+    Headline, Org,
+};
 use slugmin::slugify;
 use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 use tera::Tera;
@@ -27,6 +30,9 @@ pub struct Page<'a> {
     pub path: String,
     pub description: Option<String>,
 
+    pub order: usize,
+    pub closed_at: Option<Datetime<'a>>,
+
     pub page: PageEnum<'a>,
 }
 
@@ -46,6 +52,7 @@ impl<'a> Page<'a> {
         headline: Headline,
         keywords: &Keywords,
         mut path: String,
+        order: usize,
     ) -> Self {
         let title = headline.title(org);
         let title_string = get_property(title, "title")
@@ -66,7 +73,8 @@ impl<'a> Page<'a> {
 
         let children = headline
             .children(org)
-            .filter_map(|page| -> Option<Page> {
+            .enumerate()
+            .filter_map(|(order, page)| -> Option<Page> {
                 let title = page.title(org);
                 if title.tags.contains(&Cow::Borrowed("noexport")) {
                     return None;
@@ -80,6 +88,14 @@ impl<'a> Page<'a> {
                 let description = get_property(title, "description")
                     .as_ref()
                     .map(ToString::to_string);
+
+                let closed_at = title.closed().and_then(|c| {
+                    if let Timestamp::Inactive { start, .. } = c {
+                        Some(start.clone())
+                    } else {
+                        None
+                    }
+                });
 
                 if title.tags.contains(&Cow::Borrowed("post")) || parent_is_posts {
                     // if there's a keyword, and it's in PROGRESS, we skip it
@@ -104,6 +120,8 @@ impl<'a> Page<'a> {
                                 slug,
                                 title: title_string,
                                 description,
+                                order,
+                                closed_at,
                             });
                         }
                     }
@@ -116,9 +134,11 @@ impl<'a> Page<'a> {
                         slug,
                         title: title_string,
                         description,
+                        order,
+                        closed_at,
                     })
                 } else {
-                    Some(Self::parse_index(org, page, keywords, path.clone()))
+                    Some(Self::parse_index(org, page, keywords, path.clone(), order))
                 }
             })
             .map(|p| (p.slug.clone(), p))
@@ -136,6 +156,14 @@ impl<'a> Page<'a> {
             path,
             title: title_string,
             description,
+            order,
+            closed_at: title.closed().and_then(|c| {
+                if let Timestamp::Inactive { start, .. } = c {
+                    Some(start.clone())
+                } else {
+                    None
+                }
+            }),
         }
     }
 
@@ -153,7 +181,7 @@ impl<'a> Page<'a> {
             PageEnum::Index { children } => {
                 get_index_context(&self.headline, self.org, children, config)
             }
-            PageEnum::Post => get_post_context(&self.headline, self.org, config),
+            PageEnum::Post => get_post_context(&self.headline, self.org, config, &self),
             PageEnum::OrgFile { path } => {
                 get_org_file_context(&self.headline, self.org, path, config)?
             }
