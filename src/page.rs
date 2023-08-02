@@ -62,6 +62,8 @@ impl<'a> Page<'a> {
             .as_ref()
             .map(ToString::to_string);
 
+        let parent_is_posts = title.tags.contains(&Cow::Borrowed("posts"));
+
         let children = headline
             .children(org)
             .filter_map(|page| -> Option<Page> {
@@ -79,7 +81,7 @@ impl<'a> Page<'a> {
                     .as_ref()
                     .map(ToString::to_string);
 
-                if title.tags.contains(&Cow::Borrowed("post")) {
+                if title.tags.contains(&Cow::Borrowed("post")) || parent_is_posts {
                     // if there's a keyword, and it's in PROGRESS, we skip it
                     if let Some(kw) = &title.keyword {
                         if keywords.0.contains(&kw.to_string()) {
