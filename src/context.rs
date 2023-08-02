@@ -31,8 +31,8 @@ static SYNTECT: OnceLock<(SyntaxSet, BTreeMap<String, Theme>)> = OnceLock::new()
 #[derive(Serialize, Debug)]
 struct PageLink<'a> {
     title: &'a str,
-    slug: String,
-    description: Option<Cow<'a, str>>,
+    slug: &'a str,
+    description: Option<&'a str>,
 }
 
 fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
@@ -63,20 +63,10 @@ pub fn get_index_context(
 ) -> Context {
     let pages = children
         .iter()
-        .map(|(slug, h)| {
-            let t = h.headline.title(org);
-            let title = t.raw.as_ref();
-            let description = t
-                .properties
-                .iter()
-                .find(|(n, _)| n == "description")
-                .map(|a| a.1.clone());
-
-            PageLink {
-                slug: slug.clone(),
-                title,
-                description,
-            }
+        .map(|(slug, page)| PageLink {
+            slug,
+            title: &page.title,
+            description: page.description.as_deref(),
         })
         .collect::<Vec<_>>();
 

@@ -25,6 +25,7 @@ pub struct Page<'a> {
     pub slug: String,
     pub title: String,
     pub path: String,
+    pub description: Option<String>,
 
     pub page: PageEnum<'a>,
 }
@@ -46,10 +47,20 @@ impl<'a> Page<'a> {
         keywords: &Keywords,
         mut path: String,
     ) -> Self {
-        let slug = get_slug(headline.title(org));
+        let title = headline.title(org);
+        let title_string = get_property(title, "title")
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| title.raw.to_string());
+
+        let slug = get_slug(title, &title_string);
         if slug != "index" {
             path = format!("{path}/{}", slug);
         }
+
+        let description = get_property(title, "description")
+            .as_ref()
+            .map(ToString::to_string);
 
         let children = headline
             .children(org)
@@ -59,7 +70,14 @@ impl<'a> Page<'a> {
                     return None;
                 }
 
-                let slug = get_slug(title);
+                let title_string = get_property(title, "title")
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| title.raw.to_string());
+                let slug = get_slug(title, &title_string);
+                let description = get_property(title, "description")
+                    .as_ref()
+                    .map(ToString::to_string);
 
                 if title.tags.contains(&Cow::Borrowed("post")) {
                     // if there's a keyword, and it's in PROGRESS, we skip it
@@ -82,7 +100,8 @@ impl<'a> Page<'a> {
                                 page: PageEnum::OrgFile { path: link.into() },
                                 path: format!("{path}/{slug}"),
                                 slug,
-                                title: title.raw.to_string(),
+                                title: title_string,
+                                description,
                             });
                         }
                     }
@@ -93,7 +112,8 @@ impl<'a> Page<'a> {
                         page: PageEnum::Post,
                         path: format!("{path}/{slug}"),
                         slug,
-                        title: title.raw.to_string(),
+                        title: title_string,
+                        description,
                     })
                 } else {
                     Some(Self::parse_index(org, page, keywords, path.clone()))
@@ -112,7 +132,8 @@ impl<'a> Page<'a> {
             page: PageEnum::Index { children },
             slug,
             path,
-            title: headline.title(org).raw.to_string(),
+            title: title_string,
+            description,
         }
     }
 
@@ -120,7 +141,12 @@ impl<'a> Page<'a> {
         let title = self.headline.title(self.org);
         let properties = title.properties.clone().into_hash_map();
 
-        let out_path = get_out(title, out);
+        let out_path = if self.slug == "index" {
+            out.to_string()
+        } else {
+            format!("{out}/{}", self.slug)
+        };
+
         let context = match &self.page {
             PageEnum::Index { children } => {
                 get_index_context(&self.headline, self.org, children, config)
@@ -154,22 +180,18 @@ impl<'a> Page<'a> {
     }
 }
 
-fn get_slug(title: &Title) -> String {
-    let properties = title.properties.clone().into_hash_map();
-    let name = &title.raw;
-
-    if let Some(prop) = properties.get("slug") {
+fn get_slug(title: &Title, title_string: &str) -> String {
+    if let Some(prop) = get_property(title, "slug") {
         prop.to_string()
     } else {
-        slugify(name)
+        slugify(title_string)
     }
 }
 
-fn get_out(title: &Title, out: &str) -> String {
-    let slug = get_slug(title);
-    if slug == "index" {
-        out.to_string()
-    } else {
-        format!("{out}/{slug}")
-    }
+pub fn get_property<'a>(title: &'_ Title<'a>, prop: &str) -> Option<Cow<'a, str>> {
+    title
+        .properties
+        .iter()
+        .find(|(n, _)| n.to_lowercase() == prop)
+        .map(|a| a.1.clone())
 }
