@@ -212,7 +212,7 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                 let path = link.path.trim_start_matches("file:");
                 let path =
                     path.trim_start_matches(format!("./{}", self.config.static_path).as_str());
-                let attrs = self.render_attributes("");
+                let mut attrs = self.render_attributes("");
 
                 if path.ends_with(".jpg")
                     || path.ends_with(".jpeg")
@@ -230,6 +230,10 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                     }
                     write!(w, "</figure>")?;
                 } else {
+                    if path.starts_with("http://") || path.starts_with("https://") {
+                        attrs.push_str(r#" target="_blank" rel="noopener""#);
+                    }
+
                     write!(
                         w,
                         "<a href=\"{}\" {attrs}>{}</a>",
