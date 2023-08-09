@@ -7,6 +7,7 @@ use tera::Tera;
 mod context;
 mod helpers;
 mod page;
+mod render;
 mod template;
 mod tera_functions;
 
