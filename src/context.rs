@@ -73,7 +73,7 @@ pub fn get_index_context(
             closed_at: page
                 .closed_at
                 .as_ref()
-                .map(|d| format!("{}-{}-{}", d.year, d.month, d.day)),
+                .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day)),
         })
         .collect::<Vec<_>>();
     pages.sort_unstable_by(|a, b| a.order.cmp(&b.order));
@@ -196,7 +196,7 @@ pub fn get_post_context(
         &page
             .closed_at
             .as_ref()
-            .map(|d| format!("{}-{}-{}", d.year, d.month, d.day)),
+            .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day)),
     );
     let word_count = count_words_post(headline, org);
     context.insert("word_count", &word_count);

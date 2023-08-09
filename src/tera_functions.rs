@@ -53,7 +53,7 @@ fn add(page: &Page<'_>, map: &mut HashMap<String, Link>) {
             closed_at: page
                 .closed_at
                 .as_ref()
-                .map(|d| format!("{}-{}-{}", d.year, d.month, d.day)),
+                .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day)),
         },
     );
     if let PageEnum::Index { children } = &page.page {
