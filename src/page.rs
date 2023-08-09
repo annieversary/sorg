@@ -173,13 +173,15 @@ impl<'a> Page<'a> {
             format!("{out}/{}", self.slug)
         };
 
-        let context = match &self.page {
+        let mut context = match &self.page {
             PageEnum::Index { children } => {
                 get_index_context(&self.headline, org, children, config)
             }
             PageEnum::Post => get_post_context(&self.headline, org, config, self),
             PageEnum::OrgFile { path } => get_org_file_context(&self.headline, org, path, config)?,
         };
+        let r = rand::random::<u16>();
+        context.insert("asset_v", &r);
 
         let template = get_template(
             tera,

@@ -37,6 +37,9 @@ pub fn make_get_pages(root: &'_ Page<'_>) -> impl tera::Function {
 struct Link {
     link: String,
     title: String,
+    closed_at: Option<String>,
+    description: Option<String>,
+    order: usize,
 }
 
 fn add(page: &Page<'_>, map: &mut HashMap<String, Link>) {
@@ -45,6 +48,12 @@ fn add(page: &Page<'_>, map: &mut HashMap<String, Link>) {
         Link {
             link: page.path.clone(),
             title: page.title.clone(),
+            description: page.description.to_owned(),
+            order: page.order,
+            closed_at: page
+                .closed_at
+                .as_ref()
+                .map(|d| format!("{}-{}-{}", d.year, d.month, d.day)),
         },
     );
     if let PageEnum::Index { children } = &page.page {

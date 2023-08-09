@@ -49,7 +49,7 @@ fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
 }
 
 #[derive(Serialize, Debug)]
-struct PageLink<'a> {
+pub struct PageLink<'a> {
     title: &'a str,
     slug: &'a str,
     description: Option<&'a str>,
@@ -571,14 +571,22 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                     || path.ends_with(".gif")
                     || path.ends_with(".webp")
                 {
-                    write!(w, "<img src=\"{}\" {attrs} />", HtmlEscape(path),)?
+                    write!(
+                        w,
+                        "<figure class=\"image\"><img src=\"{}\" {attrs} />",
+                        HtmlEscape(path),
+                    )?;
+                    if let Some(caption) = self.attributes.get("alt") {
+                        write!(w, "<figcaption>{}</figcaption>", HtmlEscape(caption))?;
+                    }
+                    write!(w, "</figure>")?;
                 } else {
                     write!(
                         w,
                         "<a href=\"{}\" {attrs}>{}</a>",
                         HtmlEscape(&path),
                         HtmlEscape(link.desc.as_ref().unwrap_or(&Cow::Borrowed(path))),
-                    )?
+                    )?;
                 }
             }
             Element::Keyword(keyword) => {
