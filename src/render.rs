@@ -214,15 +214,17 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                     path.trim_start_matches(format!("./{}", self.config.static_path).as_str());
                 let mut attrs = self.render_attributes("");
 
-                if path.ends_with(".jpg")
-                    || path.ends_with(".jpeg")
-                    || path.ends_with(".png")
-                    || path.ends_with(".gif")
-                    || path.ends_with(".webp")
+                let lower = path.to_lowercase();
+
+                if lower.ends_with(".jpg")
+                    || lower.ends_with(".jpeg")
+                    || lower.ends_with(".png")
+                    || lower.ends_with(".gif")
+                    || lower.ends_with(".webp")
                 {
                     write!(
                         w,
-                        "<figure class=\"image\"><img src=\"{}\" {attrs} />",
+                        "<figure class=\"image\"><img src=\"{}\" {attrs} loading=\"lazy\" />",
                         HtmlEscape(path),
                     )?;
                     if let Some(caption) = self.attributes.get("alt") {

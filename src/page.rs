@@ -3,6 +3,7 @@ use orgize::{
     elements::{Datetime, Timestamp, Title},
     Headline, Org,
 };
+use rss::*;
 use slugmin::slugify;
 use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 use tera::Tera;
@@ -201,9 +202,41 @@ impl<'a> Page<'a> {
             for child in children.values() {
                 child.render(tera, &out_path, config, org)?;
             }
+
+            // generate rss feed for this
+            let rss = generate_rss(children, config);
+            let path = format!("{out_path}/rss.xml");
+            std::fs::write(path, rss)?;
         }
         Ok(())
     }
+}
+
+fn generate_rss(children: &HashMap<String, Page<'_>>, config: &Config) -> String {
+    let mut items = Vec::with_capacity(children.len());
+    for page in children.values() {
+        items.push(
+            ItemBuilder::default()
+                .title(Some(page.title.clone()))
+                .link(Some(format!("{}{}", config.url, page.path)))
+                .pub_date(
+                    page.closed_at
+                        .as_ref()
+                        .map(|d| -> chrono::NaiveDateTime { d.into() })
+                        .map(|d| d.format("%a, %d %b %Y %H:%M:%S GMT").to_string()),
+                    // .map(|d| d.format("%a, %d %b %Y %H:%M:%S GMT")),
+                )
+                .build(),
+        );
+    }
+    let channel = ChannelBuilder::default()
+        .title(&config.title)
+        .link(&config.url)
+        .description(&config.description)
+        .items(items)
+        .build();
+
+    channel.to_string()
 }
 
 fn get_slug(title: &Title, title_string: &str) -> String {

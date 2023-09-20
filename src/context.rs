@@ -102,6 +102,10 @@ pub fn get_index_context(
     context.insert("word_count", &word_count);
     context.insert("reading_time", &(word_count / 180).max(1));
 
+    context.insert("base_title", &config.title);
+    context.insert("base_url", &config.url);
+    context.insert("base_description", &config.description);
+
     for (k, v) in headline.title(org).properties.iter() {
         context.insert(k.clone(), v);
     }
@@ -219,6 +223,10 @@ pub fn get_post_context(
     context.insert("content", &html);
     context.insert("sections", &sections);
 
+    context.insert("base_title", &config.title);
+    context.insert("base_url", &config.url);
+    context.insert("base_description", &config.description);
+
     for (k, v) in headline.title(org).properties.iter() {
         context.insert(k.clone(), v);
     }
@@ -275,6 +283,10 @@ pub fn get_org_file_context(
     let word_count = count_words_post(&first, org);
     context.insert("word_count", &word_count);
     context.insert("reading_time", &(word_count / 180).max(1));
+
+    context.insert("base_title", &config.title);
+    context.insert("base_url", &config.url);
+    context.insert("base_description", &config.description);
 
     for (k, v) in headline.title(org).properties.iter() {
         context.insert(k.clone(), v);

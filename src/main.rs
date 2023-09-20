@@ -1,5 +1,8 @@
 use clap::Parser;
-use color_eyre::{eyre::Context, Result};
+use color_eyre::{
+    eyre::{Context, ContextCompat},
+    Result,
+};
 use orgize::{Org, ParseConfig};
 use std::{collections::HashMap, fs::File, io::Read, path::Path};
 use tera::Tera;
@@ -60,12 +63,25 @@ fn main() -> Result<()> {
     let build_path = keywords.get("out").unwrap_or(&"build");
     let static_path = keywords.get("static").unwrap_or(&"static");
     let templates_path = keywords.get("templates").unwrap_or(&"templates");
+    let url = keywords
+        .get("url")
+        .context("Keyword 'url' was not provided")?;
+    let title = keywords
+        .get("title")
+        .context("Keyword 'title' was not provided")?;
+    let description = keywords
+        .get("description")
+        .context("Keyword 'description' was not provided")?;
 
     let config = Config {
         build_path: build_path.to_string(),
         static_path: static_path.to_string(),
         templates_path: templates_path.to_string(),
         verbose: args.verbose,
+
+        url: url.to_string(),
+        title: title.to_string(),
+        description: description.to_string(),
     };
 
     let doc = org.document();
@@ -104,4 +120,8 @@ pub struct Config {
     static_path: String,
     templates_path: String,
     verbose: bool,
+
+    url: String,
+    title: String,
+    description: String,
 }
