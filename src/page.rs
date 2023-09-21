@@ -164,7 +164,13 @@ impl<'a> Page<'a> {
         }
     }
 
-    pub fn render(&self, tera: &'a Tera, out: &str, config: &Config, org: &Org) -> Result<()> {
+    pub fn render(
+        &self,
+        tera: &'a Tera,
+        out: &str,
+        config: &Config,
+        org: &Org,
+    ) -> Result<tera::Context> {
         let title = self.headline.title(org);
         let properties = title.properties.clone().into_hash_map();
 
@@ -199,32 +205,51 @@ impl<'a> Page<'a> {
             .with_context(|| format!("rendering {}", title.raw))?;
 
         if let PageEnum::Index { children } = &self.page {
-            for child in children.values() {
-                child.render(tera, &out_path, config, org)?;
-            }
+            let children = children
+                .values()
+                .flat_map(|child| -> Result<_> {
+                    let context = child.render(tera, &out_path, config, org)?;
+                    Ok((child, context))
+                })
+                .collect::<Vec<_>>();
 
             // generate rss feed for this
             let rss = generate_rss(children, config);
             let path = format!("{out_path}/rss.xml");
             std::fs::write(path, rss)?;
         }
-        Ok(())
+        Ok(context)
     }
 }
 
-fn generate_rss(children: &HashMap<String, Page<'_>>, config: &Config) -> String {
+fn generate_rss(children: Vec<(&Page<'_>, tera::Context)>, config: &Config) -> String {
     let mut items = Vec::with_capacity(children.len());
-    for page in children.values() {
+    for (page, context) in children {
         items.push(
             ItemBuilder::default()
                 .title(Some(page.title.clone()))
                 .link(Some(format!("{}{}", config.url, page.path)))
+                .guid(Some(Guid {
+                    value: format!("{}{}", config.url, page.path),
+                    permalink: true,
+                }))
                 .pub_date(
                     page.closed_at
                         .as_ref()
                         .map(|d| -> chrono::NaiveDateTime { d.into() })
                         .map(|d| d.format("%a, %d %b %Y %H:%M:%S GMT").to_string()),
                     // .map(|d| d.format("%a, %d %b %Y %H:%M:%S GMT")),
+                )
+                .description(
+                    page.description
+                        .clone()
+                        .or_else(|| Some(config.description.clone())),
+                )
+                .content(
+                    context
+                        .get("content")
+                        .and_then(|a| a.as_str())
+                        .map(ToString::to_string),
                 )
                 .build(),
         );

@@ -216,6 +216,9 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
 
                 let lower = path.to_lowercase();
 
+                let base_url = url::Url::parse(&self.config.url)?;
+                let url = base_url.join(path)?;
+
                 if lower.ends_with(".jpg")
                     || lower.ends_with(".jpeg")
                     || lower.ends_with(".png")
@@ -225,7 +228,7 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                     write!(
                         w,
                         "<figure class=\"image\"><img src=\"{}\" {attrs} loading=\"lazy\" />",
-                        HtmlEscape(path),
+                        HtmlEscape(url.as_str()),
                     )?;
                     if let Some(caption) = self.attributes.get("alt") {
                         write!(w, "<figcaption>{}</figcaption>", HtmlEscape(caption))?;
@@ -239,7 +242,7 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                     write!(
                         w,
                         "<a href=\"{}\" {attrs}>{}</a>",
-                        HtmlEscape(&path),
+                        HtmlEscape(url.as_str()),
                         HtmlEscape(link.desc.as_ref().unwrap_or(&Cow::Borrowed(path))),
                     )?;
                 }

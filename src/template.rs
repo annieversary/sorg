@@ -42,7 +42,7 @@ pub fn render_template(
     template: &str,
     context: &Context,
     out_path: &str,
-) -> Result<()> {
+) -> Result<String> {
     let content = tera.render(template, context)?;
 
     std::fs::create_dir_all(out_path)?;
@@ -51,5 +51,5 @@ pub fn render_template(
     let mut file = File::create(path)?;
     file.write_all(content.as_bytes())?;
 
-    Ok(())
+    Ok(content)
 }
