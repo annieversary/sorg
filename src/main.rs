@@ -3,8 +3,9 @@ use color_eyre::{
     eyre::{Context, ContextCompat},
     Result,
 };
+use notify_debouncer_mini::{new_debouncer, notify::*};
 use orgize::{Org, ParseConfig};
-use std::{collections::HashMap, fs::File, io::Read, path::Path};
+use std::{collections::HashMap, path::Path, time::Duration};
 use tera::Tera;
 
 mod context;
@@ -25,6 +26,8 @@ struct Args {
     blog: String,
     #[arg(short, long)]
     verbose: bool,
+    #[arg(short, long)]
+    watch: bool,
 }
 
 fn main() -> Result<()> {
@@ -32,13 +35,62 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let path = args.blog;
-    let mut f = File::open(&path).with_context(|| format!("{path} was not found"))?;
-    let mut src = String::new();
-    f.read_to_string(&mut src)
-        .with_context(|| format!("failed to read {path}"))?;
+    let path = args.blog.clone();
 
-    let todos = (
+    // read file once to get template directory
+    let source =
+        std::fs::read_to_string(&path).with_context(|| format!("Failed to read {path}"))?;
+    let org = parse(&source)?;
+
+    let keywords = org
+        .keywords()
+        .map(|v| (v.key.as_ref(), v.value.as_ref()))
+        .collect::<HashMap<_, _>>();
+    let templates_path = keywords
+        .get("templates")
+        .unwrap_or(&"templates")
+        .to_string();
+
+    // render once cause we always want to do that
+    run(org, args.verbose)?;
+
+    if args.watch {
+        let mut watcher = new_debouncer(Duration::from_millis(100), move |res| match res {
+            Ok(_event) => {
+                fn cycle(path: &str, verbose: bool) -> Result<()> {
+                    let source = std::fs::read_to_string(path)
+                        .with_context(|| format!("Failed to read {path}"))?;
+                    let org = parse(&source)?;
+                    run(org, verbose)?;
+                    Ok(())
+                }
+                if let Err(err) = cycle(&path, args.verbose) {
+                    println!("Error occurred: {err}");
+                }
+            }
+            Err(e) => println!("watch error: {:?}", e),
+        })?;
+
+        watcher
+            .watcher()
+            .watch(Path::new(&args.blog), RecursiveMode::Recursive)?;
+        watcher
+            .watcher()
+            .watch(Path::new(&templates_path), RecursiveMode::Recursive)?;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        ctrlc::set_handler(move || {
+            let _ = sender.send(());
+        })?;
+
+        receiver.recv()?;
+    }
+
+    Ok(())
+}
+
+fn todos() -> (Vec<String>, Vec<String>) {
+    (
         vec![
             "TODO".to_string(),
             "PROGRESS".to_string(),
@@ -47,14 +99,21 @@ fn main() -> Result<()> {
             "CANCELLED".to_string(),
         ],
         vec!["DONE".to_string(), "READ".to_string()],
-    );
+    )
+}
 
+fn parse(src: &str) -> Result<Org<'_>> {
     let org = Org::parse_custom(
-        &src,
+        src,
         &ParseConfig {
-            todo_keywords: todos.clone(),
+            todo_keywords: todos(),
         },
     );
+
+    Ok(org)
+}
+
+fn run(org: Org<'_>, verbose: bool) -> Result<()> {
     let keywords = org
         .keywords()
         .map(|v| (v.key.as_ref(), v.value.as_ref()))
@@ -77,7 +136,7 @@ fn main() -> Result<()> {
         build_path: build_path.to_string(),
         static_path: static_path.to_string(),
         templates_path: templates_path.to_string(),
-        verbose: args.verbose,
+        verbose,
 
         url: url.to_string(),
         title: title.to_string(),
@@ -88,7 +147,7 @@ fn main() -> Result<()> {
 
     let first = doc.first_child(&org).unwrap();
 
-    let tree = Page::parse_index(&org, first, &todos, "".to_string(), 0);
+    let tree = Page::parse_index(&org, first, &todos(), "".to_string(), 0);
 
     if Path::new(build_path).exists() {
         std::fs::remove_dir_all(build_path).expect("couldn't remove existing build directory");
