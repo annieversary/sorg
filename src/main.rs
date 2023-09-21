@@ -28,6 +28,8 @@ struct Args {
     verbose: bool,
     #[arg(short, long)]
     watch: bool,
+    #[arg(short, long)]
+    serve: bool,
 }
 
 fn main() -> Result<()> {
@@ -50,6 +52,7 @@ fn main() -> Result<()> {
         .get("templates")
         .unwrap_or(&"templates")
         .to_string();
+    let build_path = keywords.get("out").unwrap_or(&"build").to_string();
 
     // render once cause we always want to do that
     run(org, args.verbose)?;
@@ -78,12 +81,15 @@ fn main() -> Result<()> {
             .watcher()
             .watch(Path::new(&templates_path), RecursiveMode::Recursive)?;
 
-        let (sender, receiver) = std::sync::mpsc::channel();
-        ctrlc::set_handler(move || {
-            let _ = sender.send(());
-        })?;
+        let server = file_serve::Server::new(&build_path);
+        println!("Serving at http://{}", server.addr());
 
-        receiver.recv()?;
+        server.serve().unwrap();
+    } else if args.serve {
+        let server = file_serve::Server::new(&build_path);
+        println!("Serving at http://{}", server.addr());
+
+        server.serve().unwrap();
     }
 
     Ok(())
