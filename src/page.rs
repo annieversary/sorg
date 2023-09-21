@@ -3,7 +3,10 @@ use orgize::{
     elements::{Datetime, Timestamp, Title},
     Headline, Org,
 };
-use rss::*;
+use rss::{
+    extension::atom::{self, AtomExtension, Link},
+    *,
+};
 use slugmin::slugify;
 use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 use tera::Tera;
@@ -214,7 +217,7 @@ impl<'a> Page<'a> {
                 .collect::<Vec<_>>();
 
             // generate rss feed for this
-            let rss = generate_rss(children, config);
+            let rss = generate_rss(children, config, &self.path);
             let path = format!("{out_path}/rss.xml");
             std::fs::write(path, rss)?;
         }
@@ -222,7 +225,7 @@ impl<'a> Page<'a> {
     }
 }
 
-fn generate_rss(children: Vec<(&Page<'_>, tera::Context)>, config: &Config) -> String {
+fn generate_rss(children: Vec<(&Page<'_>, tera::Context)>, config: &Config, path: &str) -> String {
     let mut items = Vec::with_capacity(children.len());
     for (page, context) in children {
         items.push(
@@ -254,9 +257,19 @@ fn generate_rss(children: Vec<(&Page<'_>, tera::Context)>, config: &Config) -> S
                 .build(),
         );
     }
+
+    let mut atom = AtomExtension::default();
+    atom.set_links([Link {
+        href: format!("{}{}/rss.xml", config.url, path),
+        rel: "self".to_string(),
+        ..Default::default()
+    }]);
+
     let channel = ChannelBuilder::default()
+        .namespaces([("atom".to_string(), atom::NAMESPACE.to_string())])
         .title(&config.title)
         .link(&config.url)
+        .atom_ext(Some(atom))
         .description(&config.description)
         .items(items)
         .build();
