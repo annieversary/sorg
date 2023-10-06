@@ -38,6 +38,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let path = args.blog.clone();
+    let release = !args.watch && !args.serve;
 
     // read file once to get template directory
     let source =
@@ -55,19 +56,19 @@ fn main() -> Result<()> {
     let build_path = keywords.get("out").unwrap_or(&"build").to_string();
 
     // render once cause we always want to do that
-    run(org, args.verbose)?;
+    run(org, args.verbose, release)?;
 
     if args.watch {
         let mut watcher = new_debouncer(Duration::from_millis(100), move |res| match res {
             Ok(_event) => {
-                fn cycle(path: &str, verbose: bool) -> Result<()> {
+                fn cycle(path: &str, verbose: bool, release: bool) -> Result<()> {
                     let source = std::fs::read_to_string(path)
                         .with_context(|| format!("Failed to read {path}"))?;
                     let org = parse(&source)?;
-                    run(org, verbose)?;
+                    run(org, verbose, release)?;
                     Ok(())
                 }
-                if let Err(err) = cycle(&path, args.verbose) {
+                if let Err(err) = cycle(&path, args.verbose, release) {
                     println!("Error occurred: {err}");
                 }
             }
@@ -95,19 +96,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn todos() -> (Vec<String>, Vec<String>) {
-    (
-        vec![
-            "TODO".to_string(),
-            "PROGRESS".to_string(),
-            "WAITING".to_string(),
-            "MAYBE".to_string(),
-            "CANCELLED".to_string(),
-        ],
-        vec!["DONE".to_string(), "READ".to_string()],
-    )
-}
-
 fn parse(src: &str) -> Result<Org<'_>> {
     let org = Org::parse_custom(
         src,
@@ -119,7 +107,7 @@ fn parse(src: &str) -> Result<Org<'_>> {
     Ok(org)
 }
 
-fn run(org: Org<'_>, verbose: bool) -> Result<()> {
+fn run(org: Org<'_>, verbose: bool, release: bool) -> Result<()> {
     let keywords = org
         .keywords()
         .map(|v| (v.key.as_ref(), v.value.as_ref()))
@@ -128,9 +116,15 @@ fn run(org: Org<'_>, verbose: bool) -> Result<()> {
     let build_path = keywords.get("out").unwrap_or(&"build");
     let static_path = keywords.get("static").unwrap_or(&"static");
     let templates_path = keywords.get("templates").unwrap_or(&"templates");
-    let url = keywords
-        .get("url")
-        .context("Keyword 'url' was not provided")?;
+    let url = if release {
+        keywords
+            .get("url")
+            .context("Keyword 'url' was not provided")?
+    } else {
+        // TODO this will break if this port is already in use and we end up using a different one
+        // we should probably start the server before rendering, so we can know what port we are using
+        "http://localhost:1024"
+    };
     let title = keywords
         .get("title")
         .context("Keyword 'title' was not provided")?;
@@ -143,6 +137,7 @@ fn run(org: Org<'_>, verbose: bool) -> Result<()> {
         static_path: static_path.to_string(),
         templates_path: templates_path.to_string(),
         verbose,
+        release,
 
         url: url.to_string(),
         title: title.to_string(),
@@ -185,8 +180,22 @@ pub struct Config {
     static_path: String,
     templates_path: String,
     verbose: bool,
+    release: bool,
 
     url: String,
     title: String,
     description: String,
+}
+
+fn todos() -> (Vec<String>, Vec<String>) {
+    (
+        vec![
+            "TODO".to_string(),
+            "PROGRESS".to_string(),
+            "WAITING".to_string(),
+            "MAYBE".to_string(),
+            "CANCELLED".to_string(),
+        ],
+        vec!["DONE".to_string(), "READ".to_string()],
+    )
 }

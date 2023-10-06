@@ -101,7 +101,7 @@ impl<'a> Page<'a> {
                 });
 
                 if title.tags.contains(&Cow::Borrowed("post")) || parent_is_posts {
-                    // if there's a keyword, and it's in PROGRESS, we skip it
+                    // if there's a keyword, and it's in TODO/PROGRESS, we skip it
                     if let Some(kw) = &title.keyword {
                         if keywords.0.contains(&kw.to_string()) {
                             return None;
