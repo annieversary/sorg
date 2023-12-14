@@ -56,6 +56,7 @@ impl<'a> Page<'a> {
         keywords: &Keywords,
         mut path: String,
         order: usize,
+        release: bool,
     ) -> Self {
         let title = headline.title(org);
         let title_string = get_property(title, "title")
@@ -92,18 +93,28 @@ impl<'a> Page<'a> {
                     .as_ref()
                     .map(ToString::to_string);
 
-                let closed_at = title.closed().and_then(|c| {
-                    if let Timestamp::Inactive { start, .. } = c {
-                        Some(start.clone())
-                    } else {
-                        None
-                    }
-                });
+                let closed_at = title
+                    .closed()
+                    .and_then(|c| {
+                        if let Timestamp::Inactive { start, .. } = c {
+                            Some(start.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .or(Some(Datetime {
+                        year: 2345,
+                        month: 1,
+                        day: 1,
+                        dayname: "Monday".into(),
+                        hour: Some(1),
+                        minute: Some(1),
+                    }));
 
                 if title.tags.contains(&Cow::Borrowed("post")) || parent_is_posts {
                     // if there's a keyword, and it's in TODO/PROGRESS, we skip it
                     if let Some(kw) = &title.keyword {
-                        if keywords.0.contains(&kw.to_string()) {
+                        if keywords.0.contains(&kw.to_string()) && (release || kw != "PROGRESS") {
                             return None;
                         }
                     }
@@ -139,7 +150,14 @@ impl<'a> Page<'a> {
                         closed_at,
                     })
                 } else {
-                    Some(Self::parse_index(org, page, keywords, path.clone(), order))
+                    Some(Self::parse_index(
+                        org,
+                        page,
+                        keywords,
+                        path.clone(),
+                        order,
+                        release,
+                    ))
                 }
             })
             .map(|p| (p.slug.clone(), p))
@@ -173,6 +191,7 @@ impl<'a> Page<'a> {
         out: &str,
         config: &Config,
         org: &Org,
+        hotreloading: bool,
     ) -> Result<tera::Context> {
         let title = self.headline.title(org);
         let properties = title.properties.clone().into_hash_map();
@@ -204,14 +223,14 @@ impl<'a> Page<'a> {
             println!("writing {out_path}");
         }
 
-        render_template(tera, &template, &context, &out_path)
+        render_template(tera, &template, &context, &out_path, hotreloading)
             .with_context(|| format!("rendering {}", title.raw))?;
 
         if let PageEnum::Index { children } = &self.page {
             let children = children
                 .values()
                 .flat_map(|child| -> Result<_> {
-                    let context = child.render(tera, &out_path, config, org)?;
+                    let context = child.render(tera, &out_path, config, org, hotreloading)?;
                     Ok((child, context))
                 })
                 .collect::<Vec<_>>();

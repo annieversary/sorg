@@ -10,6 +10,7 @@ use tera::Tera;
 
 mod context;
 mod helpers;
+mod hotreloading;
 mod page;
 mod render;
 mod template;
@@ -26,6 +27,7 @@ struct Args {
     blog: String,
     #[arg(short, long)]
     verbose: bool,
+
     #[arg(short, long)]
     watch: bool,
     #[arg(short, long)]
@@ -56,20 +58,26 @@ fn main() -> Result<()> {
     let build_path = keywords.get("out").unwrap_or(&"build").to_string();
 
     // render once cause we always want to do that
-    run(org, args.verbose, release)?;
+    run(org, args.verbose, release, args.watch)?;
 
     if args.watch {
+        let (_ws_thread, ws_tx) = hotreloading::init_websockets();
+
         let mut watcher = new_debouncer(Duration::from_millis(100), move |res| match res {
             Ok(_event) => {
                 fn cycle(path: &str, verbose: bool, release: bool) -> Result<()> {
                     let source = std::fs::read_to_string(path)
                         .with_context(|| format!("Failed to read {path}"))?;
                     let org = parse(&source)?;
-                    run(org, verbose, release)?;
+                    run(org, verbose, release, true)?;
+
                     Ok(())
                 }
                 if let Err(err) = cycle(&path, args.verbose, release) {
                     println!("Error occurred: {err}");
+                } else {
+                    // tell websocket to reload
+                    ws_tx.send(()).unwrap();
                 }
             }
             Err(e) => println!("watch error: {:?}", e),
@@ -107,7 +115,7 @@ fn parse(src: &str) -> Result<Org<'_>> {
     Ok(org)
 }
 
-fn run(org: Org<'_>, verbose: bool, release: bool) -> Result<()> {
+fn run(org: Org<'_>, verbose: bool, release: bool, hotreloading: bool) -> Result<()> {
     let keywords = org
         .keywords()
         .map(|v| (v.key.as_ref(), v.value.as_ref()))
@@ -148,7 +156,7 @@ fn run(org: Org<'_>, verbose: bool, release: bool) -> Result<()> {
 
     let first = doc.first_child(&org).unwrap();
 
-    let tree = Page::parse_index(&org, first, &todos(), "".to_string(), 0);
+    let tree = Page::parse_index(&org, first, &todos(), "".to_string(), 0, release);
 
     if Path::new(build_path).exists() {
         std::fs::remove_dir_all(build_path).expect("couldn't remove existing build directory");
@@ -157,7 +165,7 @@ fn run(org: Org<'_>, verbose: bool, release: bool) -> Result<()> {
     let mut tera = Tera::new(&format!("{templates_path}/*.html"))?;
     tera.register_function("get_pages", tera_functions::make_get_pages(&tree));
 
-    tree.render(&tera, build_path, &config, &org)?;
+    tree.render(&tera, build_path, &config, &org, hotreloading)?;
 
     std::process::Command::new("/bin/sh")
         .args(["-c", &format!("cp -r {static_path}/* {build_path}")])

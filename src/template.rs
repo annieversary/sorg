@@ -42,8 +42,13 @@ pub fn render_template(
     template: &str,
     context: &Context,
     out_path: &str,
+    hotreloading: bool,
 ) -> Result<String> {
-    let content = tera.render(template, context)?;
+    let mut content = tera.render(template, context)?;
+
+    if hotreloading {
+        content.push_str("<script>(() => { const socket = new WebSocket('ws://localhost:2794', 'sorg'); socket.addEventListener('message', () => {location.reload();}); })();</script>",);
+    }
 
     std::fs::create_dir_all(out_path)?;
     let path = format!("{out_path}/index.html");

@@ -18,3 +18,5 @@ chrono = { version = "0.4" }
 url = "2.4.1"
 notify-debouncer-mini = "0.4.1"
 file-serve = "0.3.0"
+websocket = "0.27.0"
+crossbeam-channel = "0.5.9"
