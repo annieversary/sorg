@@ -1,4 +1,3 @@
-use clap::Parser;
 use color_eyre::{
     eyre::{Context, ContextCompat},
     Result,
@@ -18,33 +17,17 @@ mod tera_functions;
 
 use page::*;
 
-/// Generate static site out of a single Org-mode file
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    /// Path to the blog org-mode file
-    #[arg(default_value = "./blog.org")]
-    blog: String,
-    #[arg(short, long)]
-    verbose: bool,
-
-    #[arg(short, long)]
-    watch: bool,
-    #[arg(short, long)]
-    serve: bool,
-}
-
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let args = Args::parse();
+    let args = parse_args();
+    dbg!(&args);
 
-    let path = args.blog.clone();
-    let release = !args.watch && !args.serve;
+    let release = args.mode == SorgMode::Run;
 
     // read file once to get template directory
-    let source =
-        std::fs::read_to_string(&path).with_context(|| format!("Failed to read {path}"))?;
+    let source = std::fs::read_to_string(&args.path)
+        .with_context(|| format!("Failed to read {}", &args.path))?;
     let org = parse(&source)?;
 
     let keywords = org
@@ -58,11 +41,12 @@ fn main() -> Result<()> {
     let build_path = keywords.get("out").unwrap_or(&"build").to_string();
 
     // render once cause we always want to do that
-    run(org, args.verbose, release, args.watch)?;
+    run(org, args.verbose, release, args.mode == SorgMode::Watch)?;
 
-    if args.watch {
+    if args.mode == SorgMode::Watch {
         let (_ws_thread, ws_tx) = hotreloading::init_websockets();
 
+        let path = args.path.clone();
         let mut watcher = new_debouncer(Duration::from_millis(100), move |res| match res {
             Ok(_event) => {
                 fn cycle(path: &str, verbose: bool, release: bool) -> Result<()> {
@@ -85,7 +69,7 @@ fn main() -> Result<()> {
 
         watcher
             .watcher()
-            .watch(Path::new(&args.blog), RecursiveMode::Recursive)?;
+            .watch(Path::new(&args.path), RecursiveMode::Recursive)?;
         watcher
             .watcher()
             .watch(Path::new(&templates_path), RecursiveMode::Recursive)?;
@@ -94,7 +78,7 @@ fn main() -> Result<()> {
         println!("Serving at http://{}", server.addr());
 
         server.serve().unwrap();
-    } else if args.serve {
+    } else if args.mode == SorgMode::Serve {
         let server = file_serve::Server::new(&build_path);
         println!("Serving at http://{}", server.addr());
 
@@ -102,6 +86,70 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(PartialEq, Eq, Debug)]
+enum SorgMode {
+    Run,
+    Serve,
+    Watch,
+}
+
+#[derive(Debug)]
+struct Args {
+    mode: SorgMode,
+    path: String,
+    verbose: bool,
+}
+
+fn parse_args() -> Args {
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    let verbose = args.iter().any(|s| s == "-v" || s == "--verbose");
+
+    let args: Vec<_> = args
+        .iter()
+        .filter(|s| *s != "-v" && *s != "--verbose")
+        .map(AsRef::as_ref)
+        .collect();
+    let slice = if args.len() >= 2 {
+        &args[..2]
+    } else {
+        &args[..]
+    };
+
+    match slice {
+        [] => Args {
+            mode: SorgMode::Run,
+            path: "./blog.org".to_string(),
+            verbose,
+        },
+        ["watch"] => Args {
+            mode: SorgMode::Watch,
+            path: "./blog.org".to_string(),
+            verbose,
+        },
+        ["serve"] => Args {
+            mode: SorgMode::Serve,
+            path: "./blog.org".to_string(),
+            verbose,
+        },
+        [path] => Args {
+            mode: SorgMode::Run,
+            path: path.to_string(),
+            verbose,
+        },
+        ["watch", path] => Args {
+            mode: SorgMode::Watch,
+            path: path.to_string(),
+            verbose,
+        },
+        ["serve", path] => Args {
+            mode: SorgMode::Serve,
+            path: path.to_string(),
+            verbose,
+        },
+        _ => panic!("unparsable input"),
+    }
 }
 
 fn parse(src: &str) -> Result<Org<'_>> {
