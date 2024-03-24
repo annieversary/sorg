@@ -229,11 +229,12 @@ impl<'a> Page<'a> {
         if let PageEnum::Index { children } = &self.page {
             let children = children
                 .values()
-                .flat_map(|child| -> Result<_> {
+                .map(|child| -> Result<_> {
+                    println!("{}", &child.slug);
                     let context = child.render(tera, &out_path, config, org, hotreloading)?;
                     Ok((child, context))
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()?;
 
             // generate rss feed for this
             let rss = generate_rss(children, config, &self.path);
