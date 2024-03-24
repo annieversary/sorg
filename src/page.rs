@@ -220,7 +220,6 @@ impl<'a> Page<'a> {
             let children = children
                 .values()
                 .map(|child| -> Result<_> {
-                    println!("{}", &child.slug);
                     let context = child.render(tera, &out_path, config, org, hotreloading)?;
                     Ok((child, context))
                 })
