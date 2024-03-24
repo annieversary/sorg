@@ -3,6 +3,7 @@
 #+templates: templates
 #+static: static
 #+out: build
+#+description: my blog
 
 * index
 hello this is my website hi hi hello
@@ -15,7 +16,7 @@ i am me and this is a page on my website
 facts about me:
 - this is a fact
 - this is another fact
-** resources
+** resources                                                         :posts:
 *** hey
 ** projects
 here's some of my projects

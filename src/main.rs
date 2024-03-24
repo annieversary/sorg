@@ -21,7 +21,6 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let args = parse_args();
-    dbg!(&args);
 
     let release = args.mode == SorgMode::Run;
 

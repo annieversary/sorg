@@ -36,7 +36,7 @@ pub fn get_template<'a>(
     }
 }
 
-/// renderst the given template to the output path using the provided context
+/// renders the given template to the output path using the provided context
 pub fn render_template(
     tera: &Tera,
     template: &str,

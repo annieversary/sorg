@@ -93,23 +93,13 @@ impl<'a> Page<'a> {
                     .as_ref()
                     .map(ToString::to_string);
 
-                let closed_at = title
-                    .closed()
-                    .and_then(|c| {
-                        if let Timestamp::Inactive { start, .. } = c {
-                            Some(start.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .or(Some(Datetime {
-                        year: 2345,
-                        month: 1,
-                        day: 1,
-                        dayname: "Monday".into(),
-                        hour: Some(1),
-                        minute: Some(1),
-                    }));
+                let closed_at = title.closed().and_then(|c| {
+                    if let Timestamp::Inactive { start, .. } = c {
+                        Some(start.clone())
+                    } else {
+                        None
+                    }
+                });
 
                 if title.tags.contains(&Cow::Borrowed("post")) || parent_is_posts {
                     // if there's a keyword, and it's in TODO/PROGRESS, we skip it
