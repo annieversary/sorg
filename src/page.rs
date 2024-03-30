@@ -178,7 +178,7 @@ impl<'a> Page<'a> {
     pub fn render(
         &self,
         tera: &'a Tera,
-        out: &str,
+        mut out: PathBuf,
         config: &Config,
         org: &Org,
         hotreloading: bool,
@@ -187,9 +187,10 @@ impl<'a> Page<'a> {
         let properties = title.properties.clone().into_hash_map();
 
         let out_path = if self.slug == "index" {
-            out.to_string()
+            out
         } else {
-            format!("{out}/{}", self.slug)
+            out.push(&self.slug);
+            out
         };
 
         let mut context = match &self.page {
@@ -210,24 +211,25 @@ impl<'a> Page<'a> {
         );
 
         if config.verbose {
-            println!("writing {out_path}");
+            println!("writing {}", out_path.to_string_lossy());
         }
 
-        render_template(tera, &template, &context, &out_path, hotreloading)
+        render_template(tera, &template, &context, out_path.clone(), hotreloading)
             .with_context(|| format!("rendering {}", title.raw))?;
 
         if let PageEnum::Index { children } = &self.page {
             let children = children
                 .values()
                 .map(|child| -> Result<_> {
-                    let context = child.render(tera, &out_path, config, org, hotreloading)?;
+                    let context =
+                        child.render(tera, out_path.clone(), config, org, hotreloading)?;
                     Ok((child, context))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
             // generate rss feed for this
             let rss = generate_rss(children, config, &self.path);
-            let path = format!("{out_path}/rss.xml");
+            let path = format!("{}/rss.xml", out_path.to_string_lossy());
             std::fs::write(path, rss)?;
         }
         Ok(context)

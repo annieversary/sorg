@@ -4,7 +4,11 @@ use color_eyre::{
 };
 use notify_debouncer_mini::{new_debouncer, notify::*};
 use orgize::{Org, ParseConfig};
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use tera::Tera;
 
 mod context;
@@ -26,7 +30,7 @@ fn main() -> Result<()> {
 
     // read file once to get template directory
     let source = std::fs::read_to_string(&args.path)
-        .with_context(|| format!("Failed to read {}", &args.path))?;
+        .with_context(|| format!("Failed to read {}", &args.path.to_string_lossy()))?;
     let org = parse(&source)?;
 
     let keywords = org
@@ -40,7 +44,13 @@ fn main() -> Result<()> {
     let build_path = keywords.get("out").unwrap_or(&"build").to_string();
 
     // render once cause we always want to do that
-    run(org, args.verbose, release, args.mode == SorgMode::Watch)?;
+    run(
+        &args.path,
+        org,
+        args.verbose,
+        release,
+        args.mode == SorgMode::Watch,
+    )?;
 
     if args.mode == SorgMode::Watch {
         let (_ws_thread, ws_tx) = hotreloading::init_websockets();
@@ -48,11 +58,11 @@ fn main() -> Result<()> {
         let path = args.path.clone();
         let mut watcher = new_debouncer(Duration::from_millis(100), move |res| match res {
             Ok(_event) => {
-                fn cycle(path: &str, verbose: bool, release: bool) -> Result<()> {
+                fn cycle(path: &Path, verbose: bool, release: bool) -> Result<()> {
                     let source = std::fs::read_to_string(path)
-                        .with_context(|| format!("Failed to read {path}"))?;
+                        .with_context(|| format!("Failed to read {}", path.to_string_lossy()))?;
                     let org = parse(&source)?;
-                    run(org, verbose, release, true)?;
+                    run(path, org, verbose, release, true)?;
 
                     Ok(())
                 }
@@ -97,7 +107,7 @@ enum SorgMode {
 #[derive(Debug)]
 struct Args {
     mode: SorgMode,
-    path: String,
+    path: PathBuf,
     verbose: bool,
 }
 
@@ -119,32 +129,32 @@ fn parse_args() -> Args {
     match slice {
         [] => Args {
             mode: SorgMode::Run,
-            path: "./blog.org".to_string(),
+            path: "./blog.org".into(),
             verbose,
         },
         ["watch"] => Args {
             mode: SorgMode::Watch,
-            path: "./blog.org".to_string(),
+            path: "./blog.org".into(),
             verbose,
         },
         ["serve"] => Args {
             mode: SorgMode::Serve,
-            path: "./blog.org".to_string(),
+            path: "./blog.org".into(),
             verbose,
         },
         [path] => Args {
             mode: SorgMode::Run,
-            path: path.to_string(),
+            path: path.into(),
             verbose,
         },
         ["watch", path] => Args {
             mode: SorgMode::Watch,
-            path: path.to_string(),
+            path: path.into(),
             verbose,
         },
         ["serve", path] => Args {
             mode: SorgMode::Serve,
-            path: path.to_string(),
+            path: path.into(),
             verbose,
         },
         _ => panic!("unparsable input"),
@@ -162,15 +172,22 @@ fn parse(src: &str) -> Result<Org<'_>> {
     Ok(org)
 }
 
-fn run(org: Org<'_>, verbose: bool, release: bool, hotreloading: bool) -> Result<()> {
+fn localized_path(path: &Path, file: &str) -> PathBuf {
+    let mut path = path.to_path_buf();
+    path.pop();
+    path.push(file);
+    path
+}
+
+fn run(path: &Path, org: Org<'_>, verbose: bool, release: bool, hotreloading: bool) -> Result<()> {
     let keywords = org
         .keywords()
         .map(|v| (v.key.as_ref(), v.value.as_ref()))
         .collect::<HashMap<_, _>>();
 
-    let build_path = keywords.get("out").unwrap_or(&"build");
-    let static_path = keywords.get("static").unwrap_or(&"static");
-    let templates_path = keywords.get("templates").unwrap_or(&"templates");
+    let build_path = localized_path(path, keywords.get("out").unwrap_or(&"build"));
+    let static_path = localized_path(path, keywords.get("static").unwrap_or(&"static"));
+    let templates_path = localized_path(path, keywords.get("templates").unwrap_or(&"templates"));
     let url = if release {
         keywords
             .get("url")
@@ -188,9 +205,9 @@ fn run(org: Org<'_>, verbose: bool, release: bool, hotreloading: bool) -> Result
         .context("Keyword 'description' was not provided")?;
 
     let config = Config {
-        build_path: build_path.to_string(),
-        static_path: static_path.to_string(),
-        templates_path: templates_path.to_string(),
+        build_path: build_path.clone(),
+        static_path: static_path.clone(),
+        templates_path: templates_path.clone(),
         verbose,
         release,
 
@@ -205,17 +222,24 @@ fn run(org: Org<'_>, verbose: bool, release: bool, hotreloading: bool) -> Result
 
     let tree = Page::parse_index(&org, first, &todos(), "".to_string(), 0, release);
 
-    if Path::new(build_path).exists() {
-        std::fs::remove_dir_all(build_path).expect("couldn't remove existing build directory");
+    if build_path.exists() {
+        std::fs::remove_dir_all(&build_path).expect("couldn't remove existing build directory");
     }
 
-    let mut tera = Tera::new(&format!("{templates_path}/*.html"))?;
+    let mut tera = Tera::new(&format!("{}/*.html", templates_path.to_string_lossy()))?;
     tera.register_function("get_pages", tera_functions::make_get_pages(&tree));
 
-    tree.render(&tera, build_path, &config, &org, hotreloading)?;
+    tree.render(&tera, build_path.clone(), &config, &org, hotreloading)?;
 
     std::process::Command::new("/bin/sh")
-        .args(["-c", &format!("cp -r {static_path}/* {build_path}")])
+        .args([
+            "-c",
+            &format!(
+                "cp -r {}/* {}",
+                static_path.to_string_lossy(),
+                build_path.to_string_lossy()
+            ),
+        ])
         .output()
         .expect("failed to execute process");
 
@@ -231,9 +255,9 @@ pub type Keywords = (Vec<String>, Vec<String>);
 #[derive(Default, Clone)]
 #[allow(dead_code)]
 pub struct Config {
-    build_path: String,
-    static_path: String,
-    templates_path: String,
+    build_path: PathBuf,
+    static_path: PathBuf,
+    templates_path: PathBuf,
     verbose: bool,
     release: bool,
 
