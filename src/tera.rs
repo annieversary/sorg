@@ -14,7 +14,7 @@ pub fn make_tera(config: &Config) -> Result<Tera, tera::Error> {
             .preamble
             .get("templates")
             .map(|a| a.as_str())
-            .unwrap_or(&"templates"),
+            .unwrap_or("templates"),
     );
     Tera::new(&format!(
         "{}/*.html",

@@ -1,9 +1,8 @@
+use ::tera::Tera;
 use color_eyre::{eyre::Context, Result};
 use notify_debouncer_mini::{new_debouncer, notify::*};
 use orgize::{Org, ParseConfig};
 use std::{path::Path, time::Duration};
-use tera::Tera;
-use tera_functions::make_tera;
 use vfs::{PhysicalFS, VfsPath};
 
 mod args;
@@ -14,8 +13,9 @@ mod hotreloading;
 mod page;
 mod render;
 mod template;
-mod tera_functions;
+mod tera;
 
+use crate::tera::make_tera;
 use args::{Args, SorgMode};
 use config::{Config, TODO_KEYWORDS};
 use page::*;
@@ -32,7 +32,12 @@ fn main() -> Result<()> {
         .read_to_string()
         .with_context(|| "Failed to read file")?;
 
-    let org = parse(&source)?;
+    let org = Org::parse_custom(
+        &source,
+        &ParseConfig {
+            todo_keywords: TODO_KEYWORDS.to_org_config(),
+        },
+    );
     let config = Config::new(&fs, &args, &org)?;
     let tera = make_tera(&config)?;
 
@@ -60,7 +65,12 @@ fn main() -> Result<()> {
                             .read_to_string()
                             .with_context(|| "Failed to read file")?;
 
-                        let org = parse(&source)?;
+                        let org = Org::parse_custom(
+                            &source,
+                            &ParseConfig {
+                                todo_keywords: TODO_KEYWORDS.to_org_config(),
+                            },
+                        );
                         let config = Config::new(fs, args, &org)?;
                         let tera = make_tera(&config)?;
 
@@ -96,22 +106,11 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parse(src: &str) -> Result<Org<'_>> {
-    let org = Org::parse_custom(
-        src,
-        &ParseConfig {
-            todo_keywords: TODO_KEYWORDS.to_org_config(),
-        },
-    );
-
-    Ok(org)
-}
-
 fn build_files(config: &Config, org: Org<'_>, mut tera: Tera) -> Result<()> {
+    // TODO split into different functions
+
     let doc = org.document();
-
     let first = doc.first_child(&org).unwrap();
-
     let tree = Page::parse_index(
         &org,
         first,
@@ -133,8 +132,7 @@ fn build_files(config: &Config, org: Org<'_>, mut tera: Tera) -> Result<()> {
         .copy_dir(&config.build_path)
         .with_context(|| "Failed to copy static folder into build folder")?;
 
-    tera.register_function("get_pages", tera_functions::make_get_pages(&tree));
-
+    tera.register_function("get_pages", tera::make_get_pages(&tree));
     tree.render(
         &tera,
         config.build_path.clone(),
