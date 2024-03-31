@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 use tera::Tera;
+use vfs::{PhysicalFS, VfsPath};
 
 mod args;
 mod config;
@@ -28,11 +29,15 @@ use page::*;
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let args = Args::parse();
+    let args = Args::parse()?;
 
-    // read file once to get template directory
-    let source = std::fs::read_to_string(&args.path)
-        .with_context(|| format!("Failed to read {}", &args.path.to_string_lossy()))?;
+    let fs: VfsPath = PhysicalFS::new(args.root_folder()).into();
+
+    let source = fs
+        .join(args.file_name()?)?
+        .read_to_string()
+        .with_context(|| "Failed to read file")?;
+
     let org = parse(&source)?;
 
     let keywords = org
@@ -46,34 +51,60 @@ fn main() -> Result<()> {
     let build_path = keywords.get("out").unwrap_or(&"build").to_string();
 
     match args.mode {
-        SorgMode::Run => build_files(&args.path, org, args.verbose, args.is_release(), false)?,
+        SorgMode::Run => build_files(
+            &fs,
+            args.root_folder(),
+            org,
+            args.verbose,
+            args.is_release(),
+            false,
+        )?,
         SorgMode::Serve => {
-            build_files(&args.path, org, args.verbose, args.is_release(), false)?;
+            build_files(
+                &fs,
+                args.root_folder(),
+                org,
+                args.verbose,
+                args.is_release(),
+                false,
+            )?;
 
-            let server = file_serve::Server::new(&build_path);
+            let folder_path = fs.join(build_path)?;
+            let server = file_serve::Server::new(folder_path.as_str());
             println!("Serving at http://{}", server.addr());
 
             server.serve().unwrap();
         }
         SorgMode::Watch => {
-            build_files(&args.path, org, args.verbose, args.is_release(), true)?;
+            build_files(
+                &fs,
+                args.root_folder(),
+                org,
+                args.verbose,
+                args.is_release(),
+                true,
+            )?;
 
             let (_ws_thread, ws_tx) = hotreloading::init_websockets();
 
-            let path = args.path.clone();
             let release = args.is_release();
+            let fs = fs.clone().join(args.file_name()?)?;
+            let root_folder = args.root_folder();
             let mut watcher = new_debouncer(Duration::from_millis(100), move |res| match res {
                 Ok(_event) => {
-                    fn cycle(path: &Path, verbose: bool, release: bool) -> Result<()> {
-                        let source = std::fs::read_to_string(path).with_context(|| {
-                            format!("Failed to read {}", path.to_string_lossy())
-                        })?;
+                    fn cycle(
+                        fs: &VfsPath,
+                        root_folder: PathBuf,
+                        verbose: bool,
+                        release: bool,
+                    ) -> Result<()> {
+                        let source = fs.read_to_string().with_context(|| "Failed to read file")?;
                         let org = parse(&source)?;
-                        build_files(path, org, verbose, release, true)?;
+                        build_files(fs, root_folder, org, verbose, release, true)?;
 
                         Ok(())
                     }
-                    if let Err(err) = cycle(&path, args.verbose, release) {
+                    if let Err(err) = cycle(&fs, root_folder.clone(), args.verbose, release) {
                         println!("Error occurred: {err}");
                     } else {
                         // tell websocket to reload
@@ -112,15 +143,9 @@ fn parse(src: &str) -> Result<Org<'_>> {
     Ok(org)
 }
 
-fn localized_path(path: &Path, file: &str) -> PathBuf {
-    let mut path = path.to_path_buf();
-    path.pop();
-    path.push(file);
-    path
-}
-
 fn build_files(
-    path: &Path,
+    fs: &VfsPath,
+    root_path: PathBuf,
     org: Org<'_>,
     verbose: bool,
     release: bool,
@@ -131,9 +156,12 @@ fn build_files(
         .map(|v| (v.key.as_ref(), v.value.as_ref()))
         .collect::<HashMap<_, _>>();
 
-    let build_path = localized_path(path, keywords.get("out").unwrap_or(&"build"));
-    let static_path = localized_path(path, keywords.get("static").unwrap_or(&"static"));
-    let templates_path = localized_path(path, keywords.get("templates").unwrap_or(&"templates"));
+    let build_path = fs.clone().join(keywords.get("out").unwrap_or(&"build"))?;
+    let static_path = fs
+        .clone()
+        .join(keywords.get("static").unwrap_or(&"static"))?;
+    let template_folder = keywords.get("templates").unwrap_or(&"templates");
+    let templates_path = fs.clone().join(template_folder)?;
     let url = if release {
         keywords
             .get("url")
@@ -168,26 +196,25 @@ fn build_files(
 
     let tree = Page::parse_index(&org, first, &TODO_KEYWORDS, "".to_string(), 0, release);
 
-    if build_path.exists() {
-        std::fs::remove_dir_all(&build_path).expect("couldn't remove existing build directory");
+    if build_path.exists()? {
+        build_path
+            .remove_dir_all()
+            .with_context(|| "Couldn't clear build directory")?;
     }
 
-    let mut tera = Tera::new(&format!("{}/*.html", templates_path.to_string_lossy()))?;
+    static_path
+        .copy_dir(&build_path)
+        .with_context(|| "Failed to copy static folder into build folder")?;
+
+    let mut template_folder_path = root_path;
+    template_folder_path.push(template_folder);
+    let mut tera = Tera::new(&format!(
+        "{}/*.html",
+        template_folder_path.to_string_lossy()
+    ))?;
     tera.register_function("get_pages", tera_functions::make_get_pages(&tree));
 
     tree.render(&tera, build_path.clone(), &config, &org, hotreloading)?;
-
-    std::process::Command::new("/bin/sh")
-        .args([
-            "-c",
-            &format!(
-                "cp -r {}/* {}",
-                static_path.to_string_lossy(),
-                build_path.to_string_lossy()
-            ),
-        ])
-        .output()
-        .expect("failed to execute process");
 
     if config.verbose {
         println!("done");

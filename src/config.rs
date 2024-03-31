@@ -1,17 +1,34 @@
-use std::path::PathBuf;
+use vfs::{MemoryFS, VfsPath};
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 #[allow(dead_code)]
 pub struct Config {
-    pub build_path: PathBuf,
-    pub static_path: PathBuf,
-    pub templates_path: PathBuf,
+    pub build_path: VfsPath,
+    pub static_path: VfsPath,
+    pub templates_path: VfsPath,
     pub verbose: bool,
     pub release: bool,
 
     pub url: String,
     pub title: String,
     pub description: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            build_path: VfsPath::new(MemoryFS::new()),
+            static_path: VfsPath::new(MemoryFS::new()),
+            templates_path: VfsPath::new(MemoryFS::new()),
+
+            verbose: false,
+            release: false,
+
+            url: Default::default(),
+            title: Default::default(),
+            description: Default::default(),
+        }
+    }
 }
 
 pub const TODO_KEYWORDS: TodoKeywords = TodoKeywords {

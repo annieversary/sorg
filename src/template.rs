@@ -1,6 +1,7 @@
 use color_eyre::Result;
-use std::{borrow::Cow, collections::HashMap, fs::File, io::Write, path::PathBuf};
+use std::{borrow::Cow, collections::HashMap, io::Write};
 use tera::{Context, Tera};
+use vfs::VfsPath;
 
 /// get the correct template to use for a page
 ///
@@ -41,7 +42,7 @@ pub fn render_template(
     tera: &Tera,
     template: &str,
     context: &Context,
-    mut out_path: PathBuf,
+    out_path: VfsPath,
     hotreloading: bool,
 ) -> Result<String> {
     let mut content = tera.render(template, context)?;
@@ -50,10 +51,9 @@ pub fn render_template(
         content.push_str("<script>(() => { const socket = new WebSocket('ws://localhost:2794', 'sorg'); socket.addEventListener('message', () => {location.reload();}); })();</script>",);
     }
 
-    std::fs::create_dir_all(&out_path)?;
-    out_path.push("index.html");
+    out_path.create_dir_all()?;
 
-    let mut file = File::create(out_path)?;
+    let mut file = out_path.join("index.html")?.create_file()?;
     file.write_all(content.as_bytes())?;
 
     Ok(content)

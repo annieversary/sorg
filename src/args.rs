@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use color_eyre::{eyre::eyre, Result};
+
 #[derive(Debug)]
 pub struct Args {
     pub mode: SorgMode,
@@ -20,7 +22,7 @@ pub enum SorgMode {
 }
 
 impl Args {
-    pub fn parse() -> Self {
+    pub fn parse() -> Result<Self> {
         let args: Vec<_> = std::env::args().skip(1).collect();
         let verbose = args.iter().any(|s| s == "-v" || s == "--verbose");
 
@@ -35,7 +37,7 @@ impl Args {
             &args[..]
         };
 
-        match slice {
+        let args = match slice {
             [] => Args {
                 mode: SorgMode::Run,
                 path: "./blog.org".into(),
@@ -76,8 +78,27 @@ impl Args {
                 path: path.into(),
                 verbose,
             },
-            _ => panic!("unparsable input"),
+            _ => return Err(eyre!("Unparsable input")),
+        };
+
+        if !args.path.is_file() {
+            return Err(eyre!("Provided path is not a file"));
         }
+
+        Ok(args)
+    }
+
+    pub fn root_folder(&self) -> PathBuf {
+        let mut path = self.path.to_path_buf();
+        path.pop();
+        path
+    }
+
+    pub fn file_name(&self) -> Result<&str> {
+        self.path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| eyre!("No filename found"))
     }
 
     pub fn is_release(&self) -> bool {

@@ -10,6 +10,7 @@ use rss::{
 use slugmin::slugify;
 use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 use tera::Tera;
+use vfs::VfsPath;
 
 use crate::{
     config::{Config, TodoKeywords},
@@ -178,7 +179,7 @@ impl<'a> Page<'a> {
     pub fn render(
         &self,
         tera: &'a Tera,
-        mut out: PathBuf,
+        out: VfsPath,
         config: &Config,
         org: &Org,
         hotreloading: bool,
@@ -189,8 +190,7 @@ impl<'a> Page<'a> {
         let out_path = if self.slug == "index" {
             out
         } else {
-            out.push(&self.slug);
-            out
+            out.join(&self.slug)?
         };
 
         let mut context = match &self.page {
@@ -211,7 +211,7 @@ impl<'a> Page<'a> {
         );
 
         if config.verbose {
-            println!("writing {}", out_path.to_string_lossy());
+            println!("writing {}", out_path.as_str());
         }
 
         render_template(tera, &template, &context, out_path.clone(), hotreloading)
@@ -228,9 +228,9 @@ impl<'a> Page<'a> {
                 .collect::<Result<Vec<_>, _>>()?;
 
             // generate rss feed for this
-            let rss = generate_rss(children, config, &self.path);
-            let path = format!("{}/rss.xml", out_path.to_string_lossy());
-            std::fs::write(path, rss)?;
+            let rss_content = generate_rss(children, config, &self.path);
+            let mut rss_file = out_path.join("rss.xml")?.create_file()?;
+            write!(rss_file, "{}", rss_content)?;
         }
         Ok(context)
     }
