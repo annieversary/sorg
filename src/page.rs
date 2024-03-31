@@ -12,10 +12,10 @@ use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 use tera::Tera;
 
 use crate::{
+    config::{Config, TodoKeywords},
     context::*,
     helpers::parse_file_link,
     template::{get_template, render_template},
-    Config, Keywords,
 };
 
 #[derive(Debug)]
@@ -53,7 +53,7 @@ impl<'a> Page<'a> {
     pub fn parse_index(
         org: &'a Org<'a>,
         headline: Headline,
-        keywords: &Keywords,
+        keywords: &TodoKeywords,
         mut path: String,
         order: usize,
         release: bool,
@@ -102,9 +102,9 @@ impl<'a> Page<'a> {
                 });
 
                 if title.tags.contains(&Cow::Borrowed("post")) || parent_is_posts {
-                    // if there's a keyword, and it's in TODO/PROGRESS, we skip it
+                    // if there's a keyword on this post, and it's in TODO/PROGRESS, we skip it
                     if let Some(kw) = &title.keyword {
-                        if keywords.0.contains(&kw.to_string()) && (release || kw != "PROGRESS") {
+                        if keywords.todo.contains(&kw.as_ref()) && (release || kw != "PROGRESS") {
                             return None;
                         }
                     }

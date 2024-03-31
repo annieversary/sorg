@@ -11,6 +11,8 @@ use std::{
 };
 use tera::Tera;
 
+mod args;
+mod config;
 mod context;
 mod helpers;
 mod hotreloading;
@@ -19,14 +21,14 @@ mod render;
 mod template;
 mod tera_functions;
 
+use args::{Args, SorgMode};
+use config::{Config, TODO_KEYWORDS};
 use page::*;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let args = parse_args();
-
-    let release = args.mode == SorgMode::Run;
+    let args = Args::parse();
 
     // read file once to get template directory
     let source = std::fs::read_to_string(&args.path)
@@ -43,129 +45,67 @@ fn main() -> Result<()> {
         .to_string();
     let build_path = keywords.get("out").unwrap_or(&"build").to_string();
 
-    // render once cause we always want to do that
-    run(
-        &args.path,
-        org,
-        args.verbose,
-        release,
-        args.mode == SorgMode::Watch,
-    )?;
+    match args.mode {
+        SorgMode::Run => build_files(&args.path, org, args.verbose, args.is_release(), false)?,
+        SorgMode::Serve => {
+            build_files(&args.path, org, args.verbose, args.is_release(), false)?;
 
-    if args.mode == SorgMode::Watch {
-        let (_ws_thread, ws_tx) = hotreloading::init_websockets();
+            let server = file_serve::Server::new(&build_path);
+            println!("Serving at http://{}", server.addr());
 
-        let path = args.path.clone();
-        let mut watcher = new_debouncer(Duration::from_millis(100), move |res| match res {
-            Ok(_event) => {
-                fn cycle(path: &Path, verbose: bool, release: bool) -> Result<()> {
-                    let source = std::fs::read_to_string(path)
-                        .with_context(|| format!("Failed to read {}", path.to_string_lossy()))?;
-                    let org = parse(&source)?;
-                    run(path, org, verbose, release, true)?;
+            server.serve().unwrap();
+        }
+        SorgMode::Watch => {
+            build_files(&args.path, org, args.verbose, args.is_release(), true)?;
 
-                    Ok(())
+            let (_ws_thread, ws_tx) = hotreloading::init_websockets();
+
+            let path = args.path.clone();
+            let release = args.is_release();
+            let mut watcher = new_debouncer(Duration::from_millis(100), move |res| match res {
+                Ok(_event) => {
+                    fn cycle(path: &Path, verbose: bool, release: bool) -> Result<()> {
+                        let source = std::fs::read_to_string(path).with_context(|| {
+                            format!("Failed to read {}", path.to_string_lossy())
+                        })?;
+                        let org = parse(&source)?;
+                        build_files(path, org, verbose, release, true)?;
+
+                        Ok(())
+                    }
+                    if let Err(err) = cycle(&path, args.verbose, release) {
+                        println!("Error occurred: {err}");
+                    } else {
+                        // tell websocket to reload
+                        ws_tx.send(()).unwrap();
+                    }
                 }
-                if let Err(err) = cycle(&path, args.verbose, release) {
-                    println!("Error occurred: {err}");
-                } else {
-                    // tell websocket to reload
-                    ws_tx.send(()).unwrap();
-                }
-            }
-            Err(e) => println!("watch error: {:?}", e),
-        })?;
+                Err(e) => println!("watch error: {:?}", e),
+            })?;
 
-        watcher
-            .watcher()
-            .watch(Path::new(&args.path), RecursiveMode::Recursive)?;
-        watcher
-            .watcher()
-            .watch(Path::new(&templates_path), RecursiveMode::Recursive)?;
+            watcher
+                .watcher()
+                .watch(Path::new(&args.path), RecursiveMode::Recursive)?;
+            watcher
+                .watcher()
+                .watch(Path::new(&templates_path), RecursiveMode::Recursive)?;
 
-        let server = file_serve::Server::new(&build_path);
-        println!("Serving at http://{}", server.addr());
+            let server = file_serve::Server::new(&build_path);
+            println!("Serving at http://{}", server.addr());
 
-        server.serve().unwrap();
-    } else if args.mode == SorgMode::Serve {
-        let server = file_serve::Server::new(&build_path);
-        println!("Serving at http://{}", server.addr());
-
-        server.serve().unwrap();
+            server.serve().unwrap();
+        }
+        SorgMode::Folders => todo!(),
     }
 
     Ok(())
-}
-
-#[derive(PartialEq, Eq, Debug)]
-enum SorgMode {
-    Run,
-    Serve,
-    Watch,
-}
-
-#[derive(Debug)]
-struct Args {
-    mode: SorgMode,
-    path: PathBuf,
-    verbose: bool,
-}
-
-fn parse_args() -> Args {
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    let verbose = args.iter().any(|s| s == "-v" || s == "--verbose");
-
-    let args: Vec<_> = args
-        .iter()
-        .filter(|s| *s != "-v" && *s != "--verbose")
-        .map(AsRef::as_ref)
-        .collect();
-    let slice = if args.len() >= 2 {
-        &args[..2]
-    } else {
-        &args[..]
-    };
-
-    match slice {
-        [] => Args {
-            mode: SorgMode::Run,
-            path: "./blog.org".into(),
-            verbose,
-        },
-        ["watch"] => Args {
-            mode: SorgMode::Watch,
-            path: "./blog.org".into(),
-            verbose,
-        },
-        ["serve"] => Args {
-            mode: SorgMode::Serve,
-            path: "./blog.org".into(),
-            verbose,
-        },
-        [path] => Args {
-            mode: SorgMode::Run,
-            path: path.into(),
-            verbose,
-        },
-        ["watch", path] => Args {
-            mode: SorgMode::Watch,
-            path: path.into(),
-            verbose,
-        },
-        ["serve", path] => Args {
-            mode: SorgMode::Serve,
-            path: path.into(),
-            verbose,
-        },
-        _ => panic!("unparsable input"),
-    }
 }
 
 fn parse(src: &str) -> Result<Org<'_>> {
     let org = Org::parse_custom(
         src,
         &ParseConfig {
-            todo_keywords: todos(),
+            todo_keywords: TODO_KEYWORDS.to_org_config(),
         },
     );
 
@@ -179,7 +119,13 @@ fn localized_path(path: &Path, file: &str) -> PathBuf {
     path
 }
 
-fn run(path: &Path, org: Org<'_>, verbose: bool, release: bool, hotreloading: bool) -> Result<()> {
+fn build_files(
+    path: &Path,
+    org: Org<'_>,
+    verbose: bool,
+    release: bool,
+    hotreloading: bool,
+) -> Result<()> {
     let keywords = org
         .keywords()
         .map(|v| (v.key.as_ref(), v.value.as_ref()))
@@ -220,7 +166,7 @@ fn run(path: &Path, org: Org<'_>, verbose: bool, release: bool, hotreloading: bo
 
     let first = doc.first_child(&org).unwrap();
 
-    let tree = Page::parse_index(&org, first, &todos(), "".to_string(), 0, release);
+    let tree = Page::parse_index(&org, first, &TODO_KEYWORDS, "".to_string(), 0, release);
 
     if build_path.exists() {
         std::fs::remove_dir_all(&build_path).expect("couldn't remove existing build directory");
@@ -248,33 +194,4 @@ fn run(path: &Path, org: Org<'_>, verbose: bool, release: bool, hotreloading: bo
     }
 
     Ok(())
-}
-
-pub type Keywords = (Vec<String>, Vec<String>);
-
-#[derive(Default, Clone)]
-#[allow(dead_code)]
-pub struct Config {
-    build_path: PathBuf,
-    static_path: PathBuf,
-    templates_path: PathBuf,
-    verbose: bool,
-    release: bool,
-
-    url: String,
-    title: String,
-    description: String,
-}
-
-fn todos() -> (Vec<String>, Vec<String>) {
-    (
-        vec![
-            "TODO".to_string(),
-            "PROGRESS".to_string(),
-            "WAITING".to_string(),
-            "MAYBE".to_string(),
-            "CANCELLED".to_string(),
-        ],
-        vec!["DONE".to_string(), "READ".to_string()],
-    )
 }
