@@ -1,8 +1,26 @@
 use serde::Serialize;
 use std::collections::HashMap;
-use tera::{to_value, Value};
+use tera::{to_value, Tera, Value};
 
-use crate::page::{Page, PageEnum};
+use crate::{
+    config::Config,
+    page::{Page, PageEnum},
+};
+
+pub fn make_tera(config: &Config) -> Result<Tera, tera::Error> {
+    let mut template_folder_path = config.root_folder.clone();
+    template_folder_path.push(
+        config
+            .preamble
+            .get("templates")
+            .map(|a| a.as_str())
+            .unwrap_or(&"templates"),
+    );
+    Tera::new(&format!(
+        "{}/*.html",
+        template_folder_path.to_string_lossy()
+    ))
+}
 
 pub fn make_get_pages(root: &'_ Page<'_>) -> impl tera::Function {
     let mut map = HashMap::new();

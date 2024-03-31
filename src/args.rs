@@ -2,14 +2,14 @@ use std::path::PathBuf;
 
 use color_eyre::{eyre::eyre, Result};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Args {
     pub mode: SorgMode,
     pub path: PathBuf,
     pub verbose: bool,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum SorgMode {
     /// Basic HTML generation from the provided file
     Run,
@@ -103,5 +103,9 @@ impl Args {
 
     pub fn is_release(&self) -> bool {
         self.mode == SorgMode::Run
+    }
+
+    pub fn is_hotreloading(&self) -> bool {
+        self.mode == SorgMode::Watch
     }
 }
