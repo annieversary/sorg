@@ -1,9 +1,6 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
-use color_eyre::{
-    eyre::{eyre, Error},
-    Result,
-};
+use color_eyre::{eyre::eyre, Result};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Args {
@@ -22,19 +19,23 @@ pub enum SorgMode {
     /// Generate HTML, start server, and watch for changes
     Watch,
     /// Generate folders in `static` for each node in the tree
-    Folders,
-    // TODO add option for Folders to create empty `.gitignore` files
+    Folders {
+        /// Whether Folders should create empty `.gitignore` files inside the created folders
+        ///
+        /// `.gitignore` files will only be created if they don't already exist
+        generate_gitignore: bool,
+    },
 }
 
-impl TryFrom<&str> for SorgMode {
-    type Error = Error;
-
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+impl SorgMode {
+    fn try_from(value: &str, argv: &HashMap<String, Vec<String>>) -> Result<Self> {
         let v = match value {
             "run" => Self::Run,
             "serve" => Self::Serve,
             "watch" => Self::Watch,
-            "folders" => Self::Folders,
+            "folders" => Self::Folders {
+                generate_gitignore: argv.contains_key("gitignore"),
+            },
             _ => return Err(eyre!("Unrecognized argument {value}")),
         };
         Ok(v)
@@ -53,11 +54,11 @@ impl Args {
 
         let (mode, path) = match &args[..] {
             [] => (SorgMode::Run, PathBuf::from("./blog.org")),
-            [arg] => match SorgMode::try_from(arg.as_str()) {
+            [arg] => match SorgMode::try_from(arg.as_str(), &argv) {
                 Ok(mode) => (mode, "./blog.org".into()),
                 Err(_) => (SorgMode::Run, arg.into()),
             },
-            [mode, path] => (SorgMode::try_from(mode.as_str())?, path.into()),
+            [mode, path] => (SorgMode::try_from(mode.as_str(), &argv)?, path.into()),
             _ => return Err(eyre!("Too many arguments")),
         };
 
@@ -118,6 +119,26 @@ mod tests {
                 mode: SorgMode::Watch,
                 path: PathBuf::from("hey.org"),
                 verbose: true,
+            },
+        );
+        test!(
+            ["folders"],
+            Args {
+                mode: SorgMode::Folders {
+                    generate_gitignore: false
+                },
+                path: PathBuf::from("./blog.org"),
+                verbose: false,
+            },
+        );
+        test!(
+            ["folders", "hey.org", "--gitignore"],
+            Args {
+                mode: SorgMode::Folders {
+                    generate_gitignore: true
+                },
+                path: PathBuf::from("hey.org"),
+                verbose: false,
             },
         );
 

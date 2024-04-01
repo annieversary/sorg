@@ -111,7 +111,9 @@ fn main() -> Result<()> {
 
             server.serve().unwrap();
         }
-        SorgMode::Folders => generate_folders(config.static_path, org)?,
+        SorgMode::Folders { generate_gitignore } => {
+            generate_folders(config.static_path, org, generate_gitignore)?
+        }
     }
 
     Ok(())
