@@ -8,35 +8,31 @@ use tera::Context;
 use crate::{
     count_words::*,
     footnotes::*,
-    page::{Page, PageEnum, PageInfo},
+    page::{Page, PageEnum},
     render::*,
     Config,
 };
 
-impl PageEnum<'_> {
-    pub fn page_context(
-        &self,
-        headline: &Headline,
-        org: &Org<'_>,
-        config: &Config,
-        info: &PageInfo,
-    ) -> Result<Context> {
-        let mut context = match self {
-            PageEnum::Index { children } => get_index_context(headline, org, children, config),
-            PageEnum::Post => get_post_context(headline, org, config),
-            PageEnum::OrgFile { path } => get_org_file_context(headline, org, path, config)?,
+impl Page<'_> {
+    pub fn page_context(&self, org: &Org<'_>, config: &Config) -> Result<Context> {
+        let mut context = match &self.page {
+            PageEnum::Index { children } => {
+                get_index_context(&self.headline, org, children, config)
+            }
+            PageEnum::Post => get_post_context(&self.headline, org, config),
+            PageEnum::OrgFile { path } => get_org_file_context(&self.headline, org, path, config)?,
         };
 
         context.insert("asset_v", &rand::random::<u16>());
 
-        context.insert("title", &info.title);
-        context.insert("date", &info.closed_at());
+        context.insert("title", &self.info.title);
+        context.insert("date", &self.info.closed_at());
 
         context.insert("base_title", &config.title);
         context.insert("base_url", &config.url);
         context.insert("base_description", &config.description);
 
-        for (k, v) in &info.properties {
+        for (k, v) in &self.info.properties {
             context.insert(k.clone(), &v);
         }
 
@@ -53,7 +49,7 @@ pub struct PageLink<'a> {
     closed_at: Option<String>,
 }
 
-pub fn get_index_context(
+fn get_index_context(
     headline: &Headline,
     org: &Org<'_>,
     children: &HashMap<String, Page>,
@@ -101,7 +97,7 @@ pub fn get_index_context(
 /// generates the context for a blog post
 ///
 /// renders the contents and gets the sections and stuff
-pub fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> Context {
+fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> Context {
     let sections = headline
         .children(org)
         .map(|h| h.title(org).raw.clone())
@@ -134,7 +130,7 @@ pub fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> 
     context
 }
 
-pub fn get_org_file_context(
+fn get_org_file_context(
     headline: &Headline,
     org: &Org<'_>,
     file: &Path,

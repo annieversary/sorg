@@ -37,9 +37,6 @@ impl<'a> Page<'a> {
         org: &Org,
         hotreloading: bool,
     ) -> Result<tera::Context> {
-        let title = self.headline.title(org);
-        let properties = title.properties.clone().into_hash_map();
-
         let out_path = if self.info.slug == "index" {
             out
         } else {
@@ -48,7 +45,7 @@ impl<'a> Page<'a> {
 
         let template = get_template(
             tera,
-            properties.get("template"),
+            self.info.properties.get("template"),
             &self.path,
             matches!(self.page, PageEnum::Index { .. }),
         );
@@ -57,12 +54,10 @@ impl<'a> Page<'a> {
             println!("writing {}", out_path.as_str());
         }
 
-        let context = self
-            .page
-            .page_context(&self.headline, org, config, &self.info)?;
+        let context = self.page_context(org, config)?;
 
         render_template(tera, &template, &context, out_path.clone(), hotreloading)
-            .with_context(|| format!("rendering {}", title.raw))?;
+            .with_context(|| format!("rendering {}", &self.info.title))?;
 
         if let PageEnum::Index { children } = &self.page {
             let children = children

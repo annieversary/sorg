@@ -87,7 +87,7 @@ fn add(page: &Page<'_>, map: &mut HashMap<String, Link>) {
 /// `template` property, `{name}.html`, or `default.html`
 pub fn get_template<'a>(
     tera: &Tera,
-    name: Option<&Cow<'a, str>>,
+    name: Option<&'a String>,
     path: &str,
     index: bool,
 ) -> Cow<'a, str> {
@@ -99,7 +99,7 @@ pub fn get_template<'a>(
 
     // use template set in properties
     if let Some(template) = name {
-        template.clone()
+        template.into()
     }
     // use $name.html as a template
     else if tera

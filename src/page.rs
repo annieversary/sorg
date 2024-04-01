@@ -17,21 +17,14 @@ pub enum PageEnum<'a> {
 pub struct Page<'a> {
     pub headline: Headline,
     pub path: String,
-
     pub info: PageInfo<'a>,
-
-    /// Name of the template, if stated in the `template` property
-    pub template_name: Option<String>,
-
     pub order: usize,
-
     pub page: PageEnum<'a>,
 }
 
 impl<'a> std::fmt::Debug for Page<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Page")
-            // .field("headline", &self.headline)
             .field("info", &self.info)
             .field("page", &self.page)
             .finish()
@@ -59,8 +52,16 @@ impl<'a> Page<'a> {
         let children = headline
             .children(org)
             .enumerate()
-            .filter_map(|(order, page)| {
-                parse_child(order, page, org, keywords, release, parent_is_posts, &path)
+            .filter_map(|(order, headline)| {
+                parse_child(
+                    order,
+                    headline,
+                    org,
+                    keywords,
+                    release,
+                    parent_is_posts,
+                    &path,
+                )
             })
             .map(|p| (p.info.slug.clone(), p))
             .collect();
@@ -73,7 +74,6 @@ impl<'a> Page<'a> {
             headline,
             page: PageEnum::Index { children },
             path,
-            template_name: info.properties.get("template").cloned(),
 
             info,
             order,
@@ -83,14 +83,14 @@ impl<'a> Page<'a> {
 
 fn parse_child<'a>(
     order: usize,
-    page: Headline,
+    headline: Headline,
     org: &'a Org<'a>,
     keywords: &TodoKeywords,
     release: bool,
     parent_is_posts: bool,
     path: &str,
 ) -> Option<Page<'a>> {
-    let title = page.title(org);
+    let title = headline.title(org);
 
     // skip
     if title.tags.contains(&Cow::Borrowed("noexport")) {
@@ -109,7 +109,7 @@ fn parse_child<'a>(
     if !is_post && !parent_is_posts {
         return Some(Page::parse_index(
             org,
-            page,
+            headline,
             keywords,
             path.to_string(),
             order,
@@ -127,10 +127,9 @@ fn parse_child<'a>(
     if let Some((_key, file)) = file_prop {
         if let Some(link) = parse_file_link(file) {
             return Some(Page {
-                headline: page,
+                headline,
                 page: PageEnum::OrgFile { path: link.into() },
                 path: format!("{path}/{}", info.slug),
-                template_name: info.properties.get("template").cloned(),
                 info,
                 order,
             });
@@ -138,11 +137,10 @@ fn parse_child<'a>(
     }
 
     Some(Page {
-        headline: page,
+        headline,
         page: PageEnum::Post,
         path: format!("{path}/{}", info.slug),
 
-        template_name: info.properties.get("template").cloned(),
         info,
         order,
     })
