@@ -1,5 +1,6 @@
 use ::tera::Tera;
 use color_eyre::{eyre::Context, Result};
+use folders::generate_folders;
 use notify_debouncer_mini::{new_debouncer, notify::*};
 use orgize::{Org, ParseConfig};
 use std::{path::Path, time::Duration};
@@ -9,6 +10,7 @@ mod args;
 mod config;
 mod context;
 mod count_words;
+mod folders;
 mod footnotes;
 mod helpers;
 mod hotreloading;
@@ -102,7 +104,7 @@ fn main() -> Result<()> {
 
             server.serve().unwrap();
         }
-        SorgMode::Folders => todo!(),
+        SorgMode::Folders => generate_folders(config.static_path, org)?,
     }
 
     Ok(())

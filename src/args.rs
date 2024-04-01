@@ -20,6 +20,7 @@ pub enum SorgMode {
     Watch,
     /// Generate folders in `static` for each node in the tree
     Folders,
+    // TODO add option for Folders to create empty `.gitignore` files
 }
 
 impl Args {
