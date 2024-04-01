@@ -8,8 +8,32 @@ use orgize::{
     Element, Event, Headline, Org,
 };
 use slugmin::slugify;
+use tera::{Context, Tera};
+use vfs::VfsPath;
 
 use crate::Config;
+
+/// renders the given template to the output path using the provided context
+pub fn render_template(
+    tera: &Tera,
+    template: &str,
+    context: &Context,
+    out_path: VfsPath,
+    hotreloading: bool,
+) -> Result<String> {
+    let mut content = tera.render(template, context)?;
+
+    if hotreloading {
+        content.push_str("<script>(() => { const socket = new WebSocket('ws://localhost:2794', 'sorg'); socket.addEventListener('message', () => {location.reload();}); })();</script>",);
+    }
+
+    out_path.create_dir_all()?;
+
+    let mut file = out_path.join("index.html")?.create_file()?;
+    file.write_all(content.as_bytes())?;
+
+    Ok(content)
+}
 
 /// renders html for a post
 pub fn write_html(

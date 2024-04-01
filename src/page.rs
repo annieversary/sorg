@@ -3,10 +3,6 @@ use orgize::{
     elements::{Datetime, Timestamp, Title},
     Headline, Org,
 };
-use rss::{
-    extension::atom::{self, AtomExtension, Link},
-    *,
-};
 use slugmin::slugify;
 use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 use tera::Tera;
@@ -16,7 +12,8 @@ use crate::{
     config::{Config, TodoKeywords},
     context::*,
     helpers::parse_file_link,
-    template::{get_template, render_template},
+    render::render_template,
+    tera::get_template,
 };
 
 #[derive(Debug)]
@@ -205,7 +202,7 @@ impl<'a> Page<'a> {
 
         let template = get_template(
             tera,
-            &properties,
+            properties.get("template"),
             &self.path,
             matches!(self.page, PageEnum::Index { .. }),
         );
@@ -228,64 +225,12 @@ impl<'a> Page<'a> {
                 .collect::<Result<Vec<_>, _>>()?;
 
             // generate rss feed for this
-            let rss_content = generate_rss(children, config, &self.path);
+            let rss_content = crate::rss::generate_rss(children, config, &self.path);
             let mut rss_file = out_path.join("rss.xml")?.create_file()?;
             write!(rss_file, "{}", rss_content)?;
         }
         Ok(context)
     }
-}
-
-fn generate_rss(children: Vec<(&Page<'_>, tera::Context)>, config: &Config, path: &str) -> String {
-    let mut items = Vec::with_capacity(children.len());
-    for (page, context) in children {
-        items.push(
-            ItemBuilder::default()
-                .title(Some(page.title.clone()))
-                .link(Some(format!("{}{}", config.url, page.path)))
-                .guid(Some(Guid {
-                    value: format!("{}{}", config.url, page.path),
-                    permalink: true,
-                }))
-                .pub_date(
-                    page.closed_at
-                        .as_ref()
-                        .map(|d| -> chrono::NaiveDateTime { d.into() })
-                        .map(|d| d.format("%a, %d %b %Y %H:%M:%S GMT").to_string()),
-                    // .map(|d| d.format("%a, %d %b %Y %H:%M:%S GMT")),
-                )
-                .description(
-                    page.description
-                        .clone()
-                        .or_else(|| Some(config.description.clone())),
-                )
-                .content(
-                    context
-                        .get("content")
-                        .and_then(|a| a.as_str())
-                        .map(ToString::to_string),
-                )
-                .build(),
-        );
-    }
-
-    let mut atom = AtomExtension::default();
-    atom.set_links([Link {
-        href: format!("{}{}/rss.xml", config.url, path),
-        rel: "self".to_string(),
-        ..Default::default()
-    }]);
-
-    let channel = ChannelBuilder::default()
-        .namespaces([("atom".to_string(), atom::NAMESPACE.to_string())])
-        .title(&config.title)
-        .link(&config.url)
-        .atom_ext(Some(atom))
-        .description(&config.description)
-        .items(items)
-        .build();
-
-    channel.to_string()
 }
 
 fn get_slug(title: &Title, title_string: &str) -> String {

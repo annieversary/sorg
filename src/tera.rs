@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 use tera::{to_value, Tera, Value};
 
 use crate::{
@@ -78,5 +78,39 @@ fn add(page: &Page<'_>, map: &mut HashMap<String, Link>) {
         for child in children.values() {
             add(child, map);
         }
+    }
+}
+
+/// get the correct template to use for a page
+///
+/// `template` property, `{name}.html`, or `default.html`
+pub fn get_template<'a>(
+    tera: &Tera,
+    name: Option<&Cow<'a, str>>,
+    path: &str,
+    index: bool,
+) -> Cow<'a, str> {
+    let path = if path == "/" {
+        "index"
+    } else {
+        path.trim_start_matches('/')
+    };
+
+    // use template set in properties
+    if let Some(template) = name {
+        template.clone()
+    }
+    // use $name.html as a template
+    else if tera
+        .get_template_names()
+        .any(|x| x == format!("{path}.html"))
+    {
+        Cow::Owned(format!("{path}.html"))
+    } else if index {
+        Cow::Borrowed("default_index.html")
+    }
+    // use default.html
+    else {
+        Cow::Borrowed("default.html")
     }
 }

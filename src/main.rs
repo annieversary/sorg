@@ -12,7 +12,7 @@ mod helpers;
 mod hotreloading;
 mod page;
 mod render;
-mod template;
+mod rss;
 mod tera;
 
 use crate::tera::make_tera;
@@ -107,8 +107,6 @@ fn main() -> Result<()> {
 }
 
 fn build_files(config: &Config, org: Org<'_>, mut tera: Tera) -> Result<()> {
-    // TODO split into different functions
-
     let doc = org.document();
     let first = doc.first_child(&org).unwrap();
     let tree = Page::parse_index(
