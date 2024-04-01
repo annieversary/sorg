@@ -65,10 +65,11 @@ fn add(page: &Page<'_>, map: &mut HashMap<String, Link>) {
         page.path.clone(),
         Link {
             link: page.path.clone(),
-            title: page.title.clone(),
-            description: page.description.to_owned(),
+            title: page.info.title.clone(),
+            description: page.info.description.to_owned(),
             order: page.order,
             closed_at: page
+                .info
                 .closed_at
                 .as_ref()
                 .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day)),

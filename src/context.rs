@@ -1,48 +1,43 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fs::File,
-    io::Read,
-    marker::PhantomData,
-    path::Path,
-    sync::OnceLock,
-};
+use std::{collections::HashMap, fs::File, io::Read, path::Path};
 
 use color_eyre::{eyre::WrapErr, Result};
 use orgize::{
     elements::{FnDef, FnRef, Link},
-    export::{DefaultHtmlHandler, SyntectHtmlHandler},
     indextree::NodeEdge,
-    syntect::{
-        highlighting::{Theme, ThemeSet},
-        html::IncludeBackground,
-        parsing::SyntaxSet,
-    },
     Element, Event, Headline, Org,
 };
 use serde_derive::Serialize;
 use tera::Context;
 
-use crate::{page::Page, render::*, Config};
+use crate::{
+    page::{Page, PageEnum},
+    render::*,
+    Config,
+};
 
-static SYNTECT: OnceLock<(SyntaxSet, BTreeMap<String, Theme>)> = OnceLock::new();
+impl PageEnum<'_> {
+    pub fn page_context(
+        &self,
+        headline: &Headline,
+        org: &Org<'_>,
+        config: &Config,
+        page: &Page,
+    ) -> Result<Context> {
+        let mut context = match self {
+            PageEnum::Index { children } => get_index_context(headline, org, children, config),
+            PageEnum::Post => get_post_context(headline, org, config, page),
+            PageEnum::OrgFile { path } => get_org_file_context(headline, org, path, config)?,
+        };
 
-fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
-    let (syntax_set, themes) = SYNTECT.get_or_init(|| {
-        (
-            SyntaxSet::load_defaults_newlines(),
-            ThemeSet::load_defaults().themes,
-        )
-    });
+        context.insert("asset_v", &rand::random::<u16>());
 
-    SyntectHtmlHandler {
-        syntax_set: syntax_set.clone(),
-        theme_set: ThemeSet {
-            themes: themes.clone(),
-        },
-        theme: String::from("InspiredGitHub"),
-        inner: DefaultHtmlHandler,
-        background: IncludeBackground::No,
-        error_type: PhantomData,
+        context.insert("title", &page.info.title);
+
+        context.insert("base_title", &config.title);
+        context.insert("base_url", &config.url);
+        context.insert("base_description", &config.description);
+
+        Ok(context)
     }
 }
 
@@ -65,18 +60,17 @@ pub fn get_index_context(
         .iter()
         .map(|(slug, page)| PageLink {
             slug,
-            title: &page.title,
-            description: page.description.as_deref(),
+            title: &page.info.title,
+            description: page.info.description.as_deref(),
             order: page.order,
             closed_at: page
+                .info
                 .closed_at
                 .as_ref()
                 .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day)),
         })
         .collect::<Vec<_>>();
     pages.sort_unstable_by(|a, b| a.order.cmp(&b.order));
-
-    let title = headline.title(org);
 
     let html = write_html(
         headline,
@@ -95,22 +89,126 @@ pub fn get_index_context(
     );
 
     let mut context = Context::new();
-    context.insert("title", &title.raw);
     context.insert("content", &html);
     context.insert("pages", &pages);
     let word_count = count_words_index(headline, org);
     context.insert("word_count", &word_count);
     context.insert("reading_time", &(word_count / 180).max(1));
 
-    context.insert("base_title", &config.title);
-    context.insert("base_url", &config.url);
-    context.insert("base_description", &config.description);
+    for (k, v) in headline.title(org).properties.iter() {
+        context.insert(k.clone(), v);
+    }
+
+    context
+}
+
+/// generates the context for a blog post
+///
+/// renders the contents and gets the sections and stuff
+pub fn get_post_context(
+    headline: &Headline,
+    org: &Org<'_>,
+    config: &Config,
+    page: &Page,
+) -> Context {
+    let sections = headline
+        .children(org)
+        .map(|h| h.title(org).raw.clone())
+        .collect::<Vec<_>>();
+
+    let mut context = Context::new();
+    context.insert(
+        "date",
+        &page
+            .info
+            .closed_at
+            .as_ref()
+            .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day)),
+    );
+    let word_count = count_words_post(headline, org);
+    context.insert("word_count", &word_count);
+    context.insert("reading_time", &(word_count / 180).max(1));
+
+    let footnotes = get_footnotes(org, headline);
+    context.insert("footnotes", &footnotes);
+
+    let handler = PostHtmlHandler {
+        level: headline.level(),
+        handler: CommonHtmlHandler {
+            handler: html_handler(),
+            config: config.clone(),
+            attributes: Default::default(),
+            footnote_id: 0,
+        },
+        in_page_title: false,
+    };
+    // handler.handler.theme = "Solarized (light)".into();
+    let html = write_html(headline, org, handler);
+
+    context.insert("content", &html);
+    context.insert("sections", &sections);
 
     for (k, v) in headline.title(org).properties.iter() {
         context.insert(k.clone(), v);
     }
 
     context
+}
+pub fn get_org_file_context(
+    headline: &Headline,
+    org: &Org<'_>,
+    file: &Path,
+    config: &Config,
+) -> Result<Context> {
+    let sections = headline
+        .children(org)
+        .map(|h| h.title(org).raw.clone())
+        .collect::<Vec<_>>();
+
+    let title = headline.title(org);
+
+    let mut context = Context::new();
+
+    let mut f = File::open(file).wrap_err_with(|| {
+        format!(
+            "headline '{}' tried to read file '{}', which doesnt exist",
+            title.raw,
+            file.as_os_str().to_string_lossy()
+        )
+    })?;
+    let mut src = String::new();
+    f.read_to_string(&mut src)?;
+
+    let new_org = Org::parse(&src);
+    let doc = new_org.document();
+    let first = doc.first_child(&new_org).unwrap();
+
+    let html = write_html(
+        &first,
+        &new_org,
+        PostHtmlHandler {
+            level: first.level(),
+            handler: CommonHtmlHandler {
+                handler: html_handler(),
+                config: config.clone(),
+                attributes: Default::default(),
+                footnote_id: 0,
+            },
+            in_page_title: false,
+        },
+    );
+
+    context.insert("content", &html);
+    context.insert("sections", &sections);
+    let word_count = count_words_post(&first, org);
+    context.insert("word_count", &word_count);
+    context.insert("reading_time", &(word_count / 180).max(1));
+
+    for (k, v) in headline.title(org).properties.iter() {
+        context.insert(k.clone(), v);
+    }
+
+    Ok(context)
 }
 
 #[derive(Serialize)]
@@ -173,126 +271,6 @@ fn get_footnotes(org: &Org<'_>, headline: &Headline) -> Vec<Footnote> {
     }
 
     footnotes
-}
-
-/// generates the context for a blog post
-///
-/// renders the contents and gets the sections and stuff
-pub fn get_post_context(
-    headline: &Headline,
-    org: &Org<'_>,
-    config: &Config,
-    page: &Page,
-) -> Context {
-    let sections = headline
-        .children(org)
-        .map(|h| h.title(org).raw.clone())
-        .collect::<Vec<_>>();
-
-    let title = headline.title(org);
-
-    let mut context = Context::new();
-    context.insert("title", &title.raw);
-    context.insert(
-        "date",
-        &page
-            .closed_at
-            .as_ref()
-            .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day)),
-    );
-    let word_count = count_words_post(headline, org);
-    context.insert("word_count", &word_count);
-    context.insert("reading_time", &(word_count / 180).max(1));
-
-    let footnotes = get_footnotes(org, headline);
-    context.insert("footnotes", &footnotes);
-
-    let handler = PostHtmlHandler {
-        level: headline.level(),
-        handler: CommonHtmlHandler {
-            handler: html_handler(),
-            config: config.clone(),
-            attributes: Default::default(),
-            footnote_id: 0,
-        },
-        in_page_title: false,
-    };
-    // handler.handler.theme = "Solarized (light)".into();
-    let html = write_html(headline, org, handler);
-
-    context.insert("content", &html);
-    context.insert("sections", &sections);
-
-    context.insert("base_title", &config.title);
-    context.insert("base_url", &config.url);
-    context.insert("base_description", &config.description);
-
-    for (k, v) in headline.title(org).properties.iter() {
-        context.insert(k.clone(), v);
-    }
-
-    context
-}
-pub fn get_org_file_context(
-    headline: &Headline,
-    org: &Org<'_>,
-    file: &Path,
-    config: &Config,
-) -> Result<Context> {
-    let sections = headline
-        .children(org)
-        .map(|h| h.title(org).raw.clone())
-        .collect::<Vec<_>>();
-
-    let title = headline.title(org);
-
-    let mut context = Context::new();
-    context.insert("title", &title.raw);
-
-    let mut f = File::open(file).wrap_err_with(|| {
-        format!(
-            "headline '{}' tried to read file '{}', which doesnt exist",
-            title.raw,
-            file.as_os_str().to_string_lossy()
-        )
-    })?;
-    let mut src = String::new();
-    f.read_to_string(&mut src)?;
-
-    let new_org = Org::parse(&src);
-    let doc = new_org.document();
-    let first = doc.first_child(&new_org).unwrap();
-
-    let html = write_html(
-        &first,
-        &new_org,
-        PostHtmlHandler {
-            level: first.level(),
-            handler: CommonHtmlHandler {
-                handler: html_handler(),
-                config: config.clone(),
-                attributes: Default::default(),
-                footnote_id: 0,
-            },
-            in_page_title: false,
-        },
-    );
-
-    context.insert("content", &html);
-    context.insert("sections", &sections);
-    let word_count = count_words_post(&first, org);
-    context.insert("word_count", &word_count);
-    context.insert("reading_time", &(word_count / 180).max(1));
-
-    context.insert("base_title", &config.title);
-    context.insert("base_url", &config.url);
-    context.insert("base_description", &config.description);
-
-    for (k, v) in headline.title(org).properties.iter() {
-        context.insert(k.clone(), v);
-    }
-
-    Ok(context)
 }
 
 fn count_words_index(headline: &Headline, org: &Org<'_>) -> usize {

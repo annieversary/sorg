@@ -1,17 +1,85 @@
-use std::{borrow::Cow, collections::HashMap, io::Write};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+    io::Write,
+    marker::PhantomData,
+    sync::OnceLock,
+};
 
-use color_eyre::{Report, Result};
+use color_eyre::{eyre::Context as EyreContext, Report, Result};
 use orgize::{
     elements::FnRef,
     export::{DefaultHtmlHandler, HtmlEscape, HtmlHandler, SyntectHtmlHandler},
     indextree::NodeEdge,
+    syntect::{
+        highlighting::{Theme, ThemeSet},
+        html::IncludeBackground,
+        parsing::SyntaxSet,
+    },
     Element, Event, Headline, Org,
 };
 use slugmin::slugify;
 use tera::{Context, Tera};
 use vfs::VfsPath;
 
-use crate::Config;
+use crate::{
+    page::{Page, PageEnum},
+    tera::get_template,
+    Config,
+};
+
+impl<'a> Page<'a> {
+    pub fn render(
+        &self,
+        tera: &'a Tera,
+        out: VfsPath,
+        config: &Config,
+        org: &Org,
+        hotreloading: bool,
+    ) -> Result<tera::Context> {
+        let title = self.headline.title(org);
+        let properties = title.properties.clone().into_hash_map();
+
+        let out_path = if self.info.slug == "index" {
+            out
+        } else {
+            out.join(&self.info.slug)?
+        };
+
+        let template = get_template(
+            tera,
+            properties.get("template"),
+            &self.path,
+            matches!(self.page, PageEnum::Index { .. }),
+        );
+
+        if config.verbose {
+            println!("writing {}", out_path.as_str());
+        }
+
+        let context = self.page.page_context(&self.headline, org, config, self)?;
+
+        render_template(tera, &template, &context, out_path.clone(), hotreloading)
+            .with_context(|| format!("rendering {}", title.raw))?;
+
+        if let PageEnum::Index { children } = &self.page {
+            let children = children
+                .values()
+                .map(|child| -> Result<_> {
+                    let context =
+                        child.render(tera, out_path.clone(), config, org, hotreloading)?;
+                    Ok((child, context))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // generate rss feed for this
+            let rss_content = crate::rss::generate_rss(children, config, &self.path);
+            let mut rss_file = out_path.join("rss.xml")?.create_file()?;
+            write!(rss_file, "{}", rss_content)?;
+        }
+        Ok(context)
+    }
+}
 
 /// renders the given template to the output path using the provided context
 pub fn render_template(
@@ -63,6 +131,28 @@ pub fn write_html(
     }
 
     String::from_utf8(w).expect("org file should contain valid utf8")
+}
+
+static SYNTECT: OnceLock<(SyntaxSet, BTreeMap<String, Theme>)> = OnceLock::new();
+
+pub fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
+    let (syntax_set, themes) = SYNTECT.get_or_init(|| {
+        (
+            SyntaxSet::load_defaults_newlines(),
+            ThemeSet::load_defaults().themes,
+        )
+    });
+
+    SyntectHtmlHandler {
+        syntax_set: syntax_set.clone(),
+        theme_set: ThemeSet {
+            themes: themes.clone(),
+        },
+        theme: String::from("InspiredGitHub"),
+        inner: DefaultHtmlHandler,
+        background: IncludeBackground::No,
+        error_type: PhantomData,
+    }
 }
 
 #[derive(Default)]

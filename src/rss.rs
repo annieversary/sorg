@@ -14,21 +14,23 @@ pub fn generate_rss(
     for (page, context) in children {
         items.push(
             ItemBuilder::default()
-                .title(Some(page.title.clone()))
+                .title(Some(page.info.title.clone()))
                 .link(Some(format!("{}{}", config.url, page.path)))
                 .guid(Some(Guid {
                     value: format!("{}{}", config.url, page.path),
                     permalink: true,
                 }))
                 .pub_date(
-                    page.closed_at
+                    page.info
+                        .closed_at
                         .as_ref()
                         .map(|d| -> chrono::NaiveDateTime { d.into() })
                         .map(|d| d.format("%a, %d %b %Y %H:%M:%S GMT").to_string()),
                     // .map(|d| d.format("%a, %d %b %Y %H:%M:%S GMT")),
                 )
                 .description(
-                    page.description
+                    page.info
+                        .description
                         .clone()
                         .or_else(|| Some(config.description.clone())),
                 )

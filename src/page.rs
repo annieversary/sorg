@@ -1,20 +1,11 @@
-use color_eyre::{eyre::Context, Result};
 use orgize::{
     elements::{Datetime, Timestamp, Title},
     Headline, Org,
 };
 use slugmin::slugify;
 use std::{borrow::Cow, collections::HashMap, path::PathBuf};
-use tera::Tera;
-use vfs::VfsPath;
 
-use crate::{
-    config::{Config, TodoKeywords},
-    context::*,
-    helpers::parse_file_link,
-    render::render_template,
-    tera::get_template,
-};
+use crate::{config::TodoKeywords, helpers::parse_file_link};
 
 #[derive(Debug)]
 pub enum PageEnum<'a> {
@@ -25,14 +16,14 @@ pub enum PageEnum<'a> {
 
 pub struct Page<'a> {
     pub headline: Headline,
-
-    pub slug: String,
-    pub title: String,
     pub path: String,
-    pub description: Option<String>,
+
+    pub info: PageInfo<'a>,
+
+    /// Name of the template, if stated in the `template` property
+    pub template_name: Option<String>,
 
     pub order: usize,
-    pub closed_at: Option<Datetime<'a>>,
 
     pub page: PageEnum<'a>,
 }
@@ -41,7 +32,7 @@ impl<'a> std::fmt::Debug for Page<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Page")
             // .field("headline", &self.headline)
-            .field("slug", &self.slug)
+            .field("info", &self.info)
             .field("page", &self.page)
             .finish()
     }
@@ -57,98 +48,21 @@ impl<'a> Page<'a> {
         release: bool,
     ) -> Self {
         let title = headline.title(org);
-        let title_string = get_property(title, "title")
-            .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| title.raw.to_string());
 
-        let slug = get_slug(title, &title_string);
-        if slug != "index" {
-            path = format!("{path}/{}", slug);
+        let info = PageInfo::new(&title);
+
+        if info.slug != "index" {
+            path = format!("{path}/{}", info.slug);
         }
-
-        let description = get_property(title, "description")
-            .as_ref()
-            .map(ToString::to_string);
-
         let parent_is_posts = title.tags.contains(&Cow::Borrowed("posts"));
 
         let children = headline
             .children(org)
             .enumerate()
-            .filter_map(|(order, page)| -> Option<Page> {
-                let title = page.title(org);
-                if title.tags.contains(&Cow::Borrowed("noexport")) {
-                    return None;
-                }
-
-                let title_string = get_property(title, "title")
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| title.raw.to_string());
-                let slug = get_slug(title, &title_string);
-                let description = get_property(title, "description")
-                    .as_ref()
-                    .map(ToString::to_string);
-
-                let closed_at = title.closed().and_then(|c| {
-                    if let Timestamp::Inactive { start, .. } = c {
-                        Some(start.clone())
-                    } else {
-                        None
-                    }
-                });
-
-                if title.tags.contains(&Cow::Borrowed("post")) || parent_is_posts {
-                    // if there's a keyword on this post, and it's in TODO/PROGRESS, we skip it
-                    if let Some(kw) = &title.keyword {
-                        if keywords.todo.contains(&kw.as_ref()) && (release || kw != "PROGRESS") {
-                            return None;
-                        }
-                    }
-
-                    // check if it's a linked file
-                    let file_prop = title
-                        .properties
-                        .iter()
-                        .find(|(k, _i)| k == &Cow::Borrowed("file"));
-                    if let Some((_key, file)) = file_prop {
-                        if let Some(link) = parse_file_link(file) {
-                            return Some(Page {
-                                headline: page,
-                                page: PageEnum::OrgFile { path: link.into() },
-                                path: format!("{path}/{slug}"),
-                                slug,
-                                title: title_string,
-                                description,
-                                order,
-                                closed_at,
-                            });
-                        }
-                    }
-
-                    Some(Page {
-                        headline: page,
-                        page: PageEnum::Post,
-                        path: format!("{path}/{slug}"),
-                        slug,
-                        title: title_string,
-                        description,
-                        order,
-                        closed_at,
-                    })
-                } else {
-                    Some(Self::parse_index(
-                        org,
-                        page,
-                        keywords,
-                        path.clone(),
-                        order,
-                        release,
-                    ))
-                }
+            .filter_map(|(order, page)| {
+                parse_child(order, page, org, keywords, release, parent_is_posts, &path)
             })
-            .map(|p| (p.slug.clone(), p))
+            .map(|p| (p.info.slug.clone(), p))
             .collect();
 
         if path.is_empty() {
@@ -158,93 +72,125 @@ impl<'a> Page<'a> {
         Page {
             headline,
             page: PageEnum::Index { children },
-            slug,
             path,
-            title: title_string,
-            description,
+            template_name: info.properties.get("template").cloned(),
+
+            info,
             order,
-            closed_at: title.closed().and_then(|c| {
-                if let Timestamp::Inactive { start, .. } = c {
-                    Some(start.clone())
-                } else {
-                    None
-                }
-            }),
         }
-    }
-
-    pub fn render(
-        &self,
-        tera: &'a Tera,
-        out: VfsPath,
-        config: &Config,
-        org: &Org,
-        hotreloading: bool,
-    ) -> Result<tera::Context> {
-        let title = self.headline.title(org);
-        let properties = title.properties.clone().into_hash_map();
-
-        let out_path = if self.slug == "index" {
-            out
-        } else {
-            out.join(&self.slug)?
-        };
-
-        let mut context = match &self.page {
-            PageEnum::Index { children } => {
-                get_index_context(&self.headline, org, children, config)
-            }
-            PageEnum::Post => get_post_context(&self.headline, org, config, self),
-            PageEnum::OrgFile { path } => get_org_file_context(&self.headline, org, path, config)?,
-        };
-        let r = rand::random::<u16>();
-        context.insert("asset_v", &r);
-
-        let template = get_template(
-            tera,
-            properties.get("template"),
-            &self.path,
-            matches!(self.page, PageEnum::Index { .. }),
-        );
-
-        if config.verbose {
-            println!("writing {}", out_path.as_str());
-        }
-
-        render_template(tera, &template, &context, out_path.clone(), hotreloading)
-            .with_context(|| format!("rendering {}", title.raw))?;
-
-        if let PageEnum::Index { children } = &self.page {
-            let children = children
-                .values()
-                .map(|child| -> Result<_> {
-                    let context =
-                        child.render(tera, out_path.clone(), config, org, hotreloading)?;
-                    Ok((child, context))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-
-            // generate rss feed for this
-            let rss_content = crate::rss::generate_rss(children, config, &self.path);
-            let mut rss_file = out_path.join("rss.xml")?.create_file()?;
-            write!(rss_file, "{}", rss_content)?;
-        }
-        Ok(context)
     }
 }
 
-fn get_slug(title: &Title, title_string: &str) -> String {
-    if let Some(prop) = get_property(title, "slug") {
-        prop.to_string()
-    } else {
-        slugify(title_string)
-    }
-}
+fn parse_child<'a>(
+    order: usize,
+    page: Headline,
+    org: &'a Org<'a>,
+    keywords: &TodoKeywords,
+    release: bool,
+    parent_is_posts: bool,
+    path: &str,
+) -> Option<Page<'a>> {
+    let title = page.title(org);
 
-pub fn get_property<'a>(title: &'_ Title<'a>, prop: &str) -> Option<Cow<'a, str>> {
-    title
+    // skip
+    if title.tags.contains(&Cow::Borrowed("noexport")) {
+        return None;
+    }
+
+    // if there's a keyword on this post, and it's in TODO/PROGRESS, we skip it
+    if let Some(kw) = &title.keyword {
+        if keywords.todo.contains(&kw.as_ref()) && (release || kw != "PROGRESS") {
+            return None;
+        }
+    }
+
+    // if this is doesnt have the `post` tag and parent is not `posts`, treat it as an index page
+    let is_post = title.tags.contains(&Cow::Borrowed("post"));
+    if !is_post && !parent_is_posts {
+        return Some(Page::parse_index(
+            org,
+            page,
+            keywords,
+            path.to_string(),
+            order,
+            release,
+        ));
+    }
+
+    let info = PageInfo::new(title);
+
+    // check if it's a linked file
+    let file_prop = title
         .properties
         .iter()
-        .find(|(n, _)| n.to_lowercase() == prop)
-        .map(|a| a.1.clone())
+        .find(|(k, _i)| k == &Cow::Borrowed("file"));
+    if let Some((_key, file)) = file_prop {
+        if let Some(link) = parse_file_link(file) {
+            return Some(Page {
+                headline: page,
+                page: PageEnum::OrgFile { path: link.into() },
+                path: format!("{path}/{}", info.slug),
+                template_name: info.properties.get("template").cloned(),
+                info,
+                order,
+            });
+        }
+    }
+
+    Some(Page {
+        headline: page,
+        page: PageEnum::Post,
+        path: format!("{path}/{}", info.slug),
+
+        template_name: info.properties.get("template").cloned(),
+        info,
+        order,
+    })
+}
+
+#[derive(Debug)]
+pub struct PageInfo<'a> {
+    pub properties: HashMap<String, String>,
+
+    pub title: String,
+    pub slug: String,
+    pub description: Option<String>,
+    pub closed_at: Option<Datetime<'a>>,
+}
+
+impl<'a> PageInfo<'a> {
+    fn new(title: &'a Title) -> Self {
+        let properties: HashMap<String, String> = title
+            .properties
+            .iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect();
+
+        let title_string = properties
+            .get("title")
+            .cloned()
+            .unwrap_or_else(|| title.raw.to_string());
+        let slug = slugify(
+            properties
+                .get("slug")
+                .cloned()
+                .unwrap_or_else(|| title_string.clone()),
+        );
+        let description = properties.get("description").cloned();
+        let closed_at = title.closed().and_then(|c| {
+            if let Timestamp::Inactive { start, .. } = c {
+                Some(start.clone())
+            } else {
+                None
+            }
+        });
+
+        Self {
+            properties,
+            title: title_string,
+            slug,
+            description,
+            closed_at,
+        }
+    }
 }
