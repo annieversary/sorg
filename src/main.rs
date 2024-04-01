@@ -1,5 +1,8 @@
 use ::tera::Tera;
-use color_eyre::{eyre::Context, Result};
+use color_eyre::{
+    eyre::{eyre, Context},
+    Result,
+};
 use folders::generate_folders;
 use notify_debouncer_mini::{new_debouncer, notify::*};
 use orgize::{Org, ParseConfig};
@@ -27,9 +30,13 @@ use page::*;
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let args = Args::parse()?;
+    let args = Args::from_env()?;
 
     let fs: VfsPath = PhysicalFS::new(args.root_folder()).into();
+
+    if !args.path.is_file() {
+        return Err(eyre!("Provided path is not a file"));
+    }
 
     let source = fs
         .join(args.file_name()?)?

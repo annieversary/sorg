@@ -1,8 +1,11 @@
 use std::path::PathBuf;
 
-use color_eyre::{eyre::eyre, Result};
+use color_eyre::{
+    eyre::{eyre, Error},
+    Result,
+};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Args {
     pub mode: SorgMode,
     pub path: PathBuf,
@@ -23,71 +26,46 @@ pub enum SorgMode {
     // TODO add option for Folders to create empty `.gitignore` files
 }
 
+impl TryFrom<&str> for SorgMode {
+    type Error = Error;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        let v = match value {
+            "run" => Self::Run,
+            "serve" => Self::Serve,
+            "watch" => Self::Watch,
+            "folders" => Self::Folders,
+            _ => return Err(eyre!("Unrecognized argument {value}")),
+        };
+        Ok(v)
+    }
+}
+
 impl Args {
-    pub fn parse() -> Result<Self> {
-        let args: Vec<_> = std::env::args().skip(1).collect();
-        let verbose = args.iter().any(|s| s == "-v" || s == "--verbose");
+    pub fn from_env() -> Result<Self> {
+        Self::parse(std::env::args().skip(1))
+    }
 
-        let args: Vec<_> = args
-            .iter()
-            .filter(|s| *s != "-v" && *s != "--verbose")
-            .map(AsRef::as_ref)
-            .collect();
-        let slice = if args.len() >= 2 {
-            &args[..2]
-        } else {
-            &args[..]
+    pub fn parse(args: impl Iterator<Item = impl ToString>) -> Result<Self> {
+        let (args, argv) = argmap::parse(args);
+
+        let verbose = argv.contains_key("v") || argv.contains_key("verbose");
+
+        let (mode, path) = match &args[..] {
+            [] => (SorgMode::Run, PathBuf::from("./blog.org")),
+            [arg] => match SorgMode::try_from(arg.as_str()) {
+                Ok(mode) => (mode, "./blog.org".into()),
+                Err(_) => (SorgMode::Run, arg.into()),
+            },
+            [mode, path] => (SorgMode::try_from(mode.as_str())?, path.into()),
+            _ => return Err(eyre!("Too many arguments")),
         };
 
-        let args = match slice {
-            [] => Args {
-                mode: SorgMode::Run,
-                path: "./blog.org".into(),
-                verbose,
-            },
-            ["watch"] => Args {
-                mode: SorgMode::Watch,
-                path: "./blog.org".into(),
-                verbose,
-            },
-            ["serve"] => Args {
-                mode: SorgMode::Serve,
-                path: "./blog.org".into(),
-                verbose,
-            },
-            ["folders"] => Args {
-                mode: SorgMode::Folders,
-                path: "./blog.org".into(),
-                verbose,
-            },
-            [path] => Args {
-                mode: SorgMode::Run,
-                path: path.into(),
-                verbose,
-            },
-            ["watch", path] => Args {
-                mode: SorgMode::Watch,
-                path: path.into(),
-                verbose,
-            },
-            ["serve", path] => Args {
-                mode: SorgMode::Serve,
-                path: path.into(),
-                verbose,
-            },
-            ["folders", path] => Args {
-                mode: SorgMode::Folders,
-                path: path.into(),
-                verbose,
-            },
-            _ => return Err(eyre!("Unparsable input")),
-        };
-
-        if !args.path.is_file() {
-            return Err(eyre!("Provided path is not a file"));
-        }
-
-        Ok(args)
+        Ok(Args {
+            mode,
+            path,
+            verbose,
+        })
     }
 
     pub fn root_folder(&self) -> PathBuf {
@@ -109,5 +87,40 @@ impl Args {
 
     pub fn is_hotreloading(&self) -> bool {
         self.mode == SorgMode::Watch
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    macro_rules! test {
+        ($args:expr, $solution:expr $(,)?) => {
+            let args: &[&str] = &$args;
+            let args = Args::parse(args.iter())?;
+            assert_eq!($solution, args);
+        };
+    }
+
+    #[test]
+    fn parse() -> Result<()> {
+        test!(
+            [],
+            Args {
+                mode: SorgMode::Run,
+                path: PathBuf::from("./blog.org"),
+                verbose: false,
+            },
+        );
+        test!(
+            ["watch", "hey.org", "-v"],
+            Args {
+                mode: SorgMode::Watch,
+                path: PathBuf::from("hey.org"),
+                verbose: true,
+            },
+        );
+
+        Ok(())
     }
 }
