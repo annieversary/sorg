@@ -1,16 +1,14 @@
 use std::{collections::HashMap, fs::File, io::Read, path::Path};
 
 use color_eyre::{eyre::WrapErr, Result};
-use orgize::{
-    elements::{FnDef, FnRef, Link},
-    indextree::NodeEdge,
-    Element, Event, Headline, Org,
-};
+use orgize::{Headline, Org};
 use serde_derive::Serialize;
 use tera::Context;
 
 use crate::{
-    page::{Page, PageEnum},
+    count_words::*,
+    footnotes::*,
+    page::{Page, PageEnum, PageInfo},
     render::*,
     Config,
 };
@@ -21,21 +19,26 @@ impl PageEnum<'_> {
         headline: &Headline,
         org: &Org<'_>,
         config: &Config,
-        page: &Page,
+        info: &PageInfo,
     ) -> Result<Context> {
         let mut context = match self {
             PageEnum::Index { children } => get_index_context(headline, org, children, config),
-            PageEnum::Post => get_post_context(headline, org, config, page),
+            PageEnum::Post => get_post_context(headline, org, config),
             PageEnum::OrgFile { path } => get_org_file_context(headline, org, path, config)?,
         };
 
         context.insert("asset_v", &rand::random::<u16>());
 
-        context.insert("title", &page.info.title);
+        context.insert("title", &info.title);
+        context.insert("date", &info.closed_at());
 
         context.insert("base_title", &config.title);
         context.insert("base_url", &config.url);
         context.insert("base_description", &config.description);
+
+        for (k, v) in &info.properties {
+            context.insert(k.clone(), &v);
+        }
 
         Ok(context)
     }
@@ -63,11 +66,7 @@ pub fn get_index_context(
             title: &page.info.title,
             description: page.info.description.as_deref(),
             order: page.order,
-            closed_at: page
-                .info
-                .closed_at
-                .as_ref()
-                .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day)),
+            closed_at: page.info.closed_at(),
         })
         .collect::<Vec<_>>();
     pages.sort_unstable_by(|a, b| a.order.cmp(&b.order));
@@ -91,13 +90,10 @@ pub fn get_index_context(
     let mut context = Context::new();
     context.insert("content", &html);
     context.insert("pages", &pages);
+
     let word_count = count_words_index(headline, org);
     context.insert("word_count", &word_count);
     context.insert("reading_time", &(word_count / 180).max(1));
-
-    for (k, v) in headline.title(org).properties.iter() {
-        context.insert(k.clone(), v);
-    }
 
     context
 }
@@ -105,32 +101,13 @@ pub fn get_index_context(
 /// generates the context for a blog post
 ///
 /// renders the contents and gets the sections and stuff
-pub fn get_post_context(
-    headline: &Headline,
-    org: &Org<'_>,
-    config: &Config,
-    page: &Page,
-) -> Context {
+pub fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> Context {
     let sections = headline
         .children(org)
         .map(|h| h.title(org).raw.clone())
         .collect::<Vec<_>>();
 
     let mut context = Context::new();
-    context.insert(
-        "date",
-        &page
-            .info
-            .closed_at
-            .as_ref()
-            .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day)),
-    );
-    let word_count = count_words_post(headline, org);
-    context.insert("word_count", &word_count);
-    context.insert("reading_time", &(word_count / 180).max(1));
-
-    let footnotes = get_footnotes(org, headline);
-    context.insert("footnotes", &footnotes);
 
     let handler = PostHtmlHandler {
         level: headline.level(),
@@ -142,18 +119,21 @@ pub fn get_post_context(
         },
         in_page_title: false,
     };
-    // handler.handler.theme = "Solarized (light)".into();
     let html = write_html(headline, org, handler);
 
     context.insert("content", &html);
     context.insert("sections", &sections);
 
-    for (k, v) in headline.title(org).properties.iter() {
-        context.insert(k.clone(), v);
-    }
+    let word_count = count_words_post(headline, org);
+    context.insert("word_count", &word_count);
+    context.insert("reading_time", &(word_count / 180).max(1));
+
+    let footnotes = get_footnotes(org, headline);
+    context.insert("footnotes", &footnotes);
 
     context
 }
+
 pub fn get_org_file_context(
     headline: &Headline,
     org: &Org<'_>,
@@ -200,152 +180,13 @@ pub fn get_org_file_context(
 
     context.insert("content", &html);
     context.insert("sections", &sections);
+
     let word_count = count_words_post(&first, org);
     context.insert("word_count", &word_count);
     context.insert("reading_time", &(word_count / 180).max(1));
 
-    for (k, v) in headline.title(org).properties.iter() {
-        context.insert(k.clone(), v);
-    }
+    let footnotes = get_footnotes(org, headline);
+    context.insert("footnotes", &footnotes);
 
     Ok(context)
-}
-
-#[derive(Serialize)]
-struct Footnote {
-    label: String,
-    definition: String,
-}
-
-fn get_footnotes(org: &Org<'_>, headline: &Headline) -> Vec<Footnote> {
-    let it = headline
-        .headline_node()
-        .traverse(org.arena())
-        .map(move |edge| match edge {
-            NodeEdge::Start(node) => Event::Start(&org[node]),
-            NodeEdge::End(node) => Event::End(&org[node]),
-        });
-
-    let mut footnotes = Vec::new();
-
-    let mut footnote_id = 0;
-    let mut in_footnote = None;
-
-    for event in it {
-        // println!("sub: {in_subheadline}, head: {in_headline}, title: {in_page_title}");
-        match event {
-            Event::Start(element) => match element {
-                Element::FnDef(FnDef { label, .. }) => {
-                    in_footnote = Some((label.to_string(), "".to_string()));
-                }
-                Element::FnRef(FnRef {
-                    label,
-                    definition: Some(def),
-                }) => {
-                    let label = if label.is_empty() {
-                        footnote_id += 1;
-                        footnote_id.to_string()
-                    } else {
-                        label.to_string()
-                    };
-                    footnotes.push(Footnote {
-                        label,
-                        definition: def.to_string(),
-                    });
-                }
-                Element::Text { value } if in_footnote.is_some() => {
-                    if let Some((_, def)) = &mut in_footnote {
-                        def.push_str(value);
-                    }
-                }
-                _ => {}
-            },
-            Event::End(element) => {
-                if let Element::FnDef(_) = element {
-                    if let Some((label, definition)) = in_footnote.take() {
-                        footnotes.push(Footnote { label, definition });
-                    }
-                }
-            }
-        }
-    }
-
-    footnotes
-}
-
-fn count_words_index(headline: &Headline, org: &Org<'_>) -> usize {
-    // dont count children headlines, just the actual text on this page
-    let it = headline
-        .headline_node()
-        .traverse(org.arena())
-        .map(move |edge| match edge {
-            NodeEdge::Start(node) => Event::Start(&org[node]),
-            NodeEdge::End(node) => Event::End(&org[node]),
-        });
-
-    let mut v = 0;
-    let mut in_subheadline = false;
-    let mut in_headline = false;
-    let mut in_page_title = false;
-
-    for event in it {
-        // println!("sub: {in_subheadline}, head: {in_headline}, title: {in_page_title}");
-        match event {
-            Event::Start(element) if !in_headline => match element {
-                Element::Headline { level } if *level > headline.level() + 1 => {
-                    in_headline = true;
-                }
-                Element::Headline { level } if *level > headline.level() => {
-                    in_subheadline = true;
-                }
-                Element::Title(_) => {
-                    in_page_title = true;
-                }
-                _ if !in_subheadline || in_page_title => {
-                    // count this element
-                    v += match element {
-                        Element::Text { value } => words_count::count(value).words,
-                        Element::Link(Link {
-                            desc: Some(value), ..
-                        }) => words_count::count(value).words,
-                        _ => 0,
-                    };
-                }
-                // while we are in a title, we'll land here, cause we dont want to show the child posts
-                _ => {}
-            },
-            Event::End(element) => match element {
-                Element::Headline { level } if *level > headline.level() + 1 => {
-                    in_headline = false;
-                }
-                Element::Headline { level } if *level > headline.level() => {
-                    in_subheadline = false;
-                }
-                Element::Title(_) => {
-                    in_page_title = false;
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
-    v
-}
-fn count_words_post(headline: &Headline, org: &Org<'_>) -> usize {
-    headline
-        .headline_node()
-        .traverse(org.arena())
-        .flat_map(move |edge| match edge {
-            NodeEdge::Start(node) => Some(&org[node]),
-            NodeEdge::End(_) => None,
-        })
-        .map(|el| match el {
-            Element::Text { value } => words_count::count(value).words,
-            Element::Link(Link {
-                desc: Some(value), ..
-            }) => words_count::count(value).words,
-            _ => 0,
-        })
-        .sum()
 }

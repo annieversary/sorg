@@ -57,7 +57,9 @@ impl<'a> Page<'a> {
             println!("writing {}", out_path.as_str());
         }
 
-        let context = self.page.page_context(&self.headline, org, config, self)?;
+        let context = self
+            .page
+            .page_context(&self.headline, org, config, &self.info)?;
 
         render_template(tera, &template, &context, out_path.clone(), hotreloading)
             .with_context(|| format!("rendering {}", title.raw))?;

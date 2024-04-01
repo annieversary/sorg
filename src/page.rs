@@ -49,7 +49,7 @@ impl<'a> Page<'a> {
     ) -> Self {
         let title = headline.title(org);
 
-        let info = PageInfo::new(&title);
+        let info = PageInfo::new(title);
 
         if info.slug != "index" {
             path = format!("{path}/{}", info.slug);
@@ -192,5 +192,11 @@ impl<'a> PageInfo<'a> {
             description,
             closed_at,
         }
+    }
+
+    pub fn closed_at(&self) -> Option<String> {
+        self.closed_at
+            .as_ref()
+            .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day))
     }
 }

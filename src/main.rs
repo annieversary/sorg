@@ -8,6 +8,8 @@ use vfs::{PhysicalFS, VfsPath};
 mod args;
 mod config;
 mod context;
+mod count_words;
+mod footnotes;
 mod helpers;
 mod hotreloading;
 mod page;
