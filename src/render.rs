@@ -133,7 +133,9 @@ pub fn write_html(
 
 static SYNTECT: OnceLock<(SyntaxSet, BTreeMap<String, Theme>)> = OnceLock::new();
 
-pub fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
+pub fn html_handler(
+    systax_highlighting_theme: String,
+) -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> {
     let (syntax_set, themes) = SYNTECT.get_or_init(|| {
         (
             SyntaxSet::load_defaults_newlines(),
@@ -146,7 +148,7 @@ pub fn html_handler() -> SyntectHtmlHandler<std::io::Error, DefaultHtmlHandler> 
         theme_set: ThemeSet {
             themes: themes.clone(),
         },
-        theme: String::from("InspiredGitHub"),
+        theme: systax_highlighting_theme,
         inner: DefaultHtmlHandler,
         background: IncludeBackground::No,
         error_type: PhantomData,

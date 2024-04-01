@@ -26,6 +26,10 @@ pub struct Config {
     pub url: String,
     pub title: String,
     pub description: String,
+
+    /// One of: base16-ocean.dark, base16-eighties.dark, base16-mocha.dark, base16-ocean.light,
+    /// InspiredGitHub, Solarized (dark), Solarized (light)
+    pub syntax_highlighting_theme: String,
 }
 
 impl Default for Config {
@@ -47,6 +51,8 @@ impl Default for Config {
             url: Default::default(),
             title: Default::default(),
             description: Default::default(),
+
+            syntax_highlighting_theme: "InspiredGitHub".to_string(),
         }
     }
 }
@@ -97,6 +103,11 @@ impl Config {
             path
         };
 
+        let syntax_highlighting_theme = preamble
+            .get("syntax_highlighting_theme")
+            .unwrap_or(&"InspiredGitHub")
+            .to_string();
+
         let config = Self {
             root_folder: args.root_folder(),
             templates_folder,
@@ -117,6 +128,8 @@ impl Config {
             url: url.to_string(),
             title: title.to_string(),
             description: description.to_string(),
+
+            syntax_highlighting_theme,
         };
         Ok(config)
     }

@@ -73,7 +73,7 @@ fn get_index_context(
         IndexHtmlHandler {
             level: headline.level(),
             handler: CommonHtmlHandler {
-                handler: html_handler(),
+                handler: html_handler(config.syntax_highlighting_theme.clone()),
                 config: config.clone(),
                 attributes: Default::default(),
                 footnote_id: 0,
@@ -108,7 +108,7 @@ fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> Cont
     let handler = PostHtmlHandler {
         level: headline.level(),
         handler: CommonHtmlHandler {
-            handler: html_handler(),
+            handler: html_handler(config.syntax_highlighting_theme.clone()),
             config: config.clone(),
             attributes: Default::default(),
             footnote_id: 0,
@@ -165,7 +165,7 @@ fn get_org_file_context(
         PostHtmlHandler {
             level: first.level(),
             handler: CommonHtmlHandler {
-                handler: html_handler(),
+                handler: html_handler(config.syntax_highlighting_theme.clone()),
                 config: config.clone(),
                 attributes: Default::default(),
                 footnote_id: 0,
