@@ -198,3 +198,123 @@ impl<'a> PageInfo<'a> {
             .map(|d| format!("{}-{:0>2}-{:0>2}", d.year, d.month, d.day))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::TODO_KEYWORDS;
+
+    use super::*;
+
+    #[test]
+    fn parse_single() {
+        let source = r#"
+* index page
+this is my content
+"#;
+
+        let org = Org::parse(source);
+        let page = Page::parse_index(
+            &org,
+            org.document().first_child(&org).unwrap(),
+            &TODO_KEYWORDS,
+            "".to_string(),
+            0,
+            false,
+        );
+
+        assert_eq!("index page", page.info.title);
+        assert_eq!("index-page", page.info.slug);
+        assert_eq!(0, page.order);
+        assert_eq!("/index-page", page.path);
+        assert_eq!(None, page.info.description);
+        assert!(page.info.closed_at.is_none());
+
+        assert!(matches!(page.page, PageEnum::Index { .. }));
+        if let PageEnum::Index { children } = page.page {
+            assert_eq!(0, children.len());
+        }
+    }
+
+    #[test]
+    fn parse_single_full() {
+        let source = r#"
+* index
+CLOSED: [1234-12-34 Sat 12:34]
+:PROPERTIES:
+:description: this is a description
+:END:
+this is my content
+"#;
+
+        let org = Org::parse(source);
+        let page = Page::parse_index(
+            &org,
+            org.document().first_child(&org).unwrap(),
+            &TODO_KEYWORDS,
+            "".to_string(),
+            0,
+            false,
+        );
+
+        assert_eq!("index", page.info.title);
+        assert_eq!("index", page.info.slug);
+        assert_eq!("/", page.path);
+        assert_eq!(0, page.order);
+        assert_eq!(
+            Some("this is a description"),
+            page.info.description.as_deref()
+        );
+        assert_eq!(Some("1234-12-34"), page.info.closed_at().as_deref());
+
+        assert!(matches!(page.page, PageEnum::Index { .. }));
+        if let PageEnum::Index { children } = page.page {
+            assert_eq!(0, children.len());
+        }
+    }
+
+    #[test]
+    fn parse_with_children() {
+        let source = r#"
+* index
+index content
+** first child
+first content
+** second child
+second content
+"#;
+
+        let org = Org::parse(source);
+        let page = Page::parse_index(
+            &org,
+            org.document().first_child(&org).unwrap(),
+            &TODO_KEYWORDS,
+            "".to_string(),
+            0,
+            false,
+        );
+
+        assert_eq!("index", page.info.slug);
+        assert_eq!("/", page.path);
+        assert_eq!(0, page.order);
+
+        if let PageEnum::Index { children } = page.page {
+            assert_eq!(2, children.len());
+
+            if let Some(page) = children.get("first-child") {
+                assert_eq!("first child", page.info.title);
+                assert_eq!("first-child", page.info.slug);
+            } else {
+                panic!("Page is missing");
+            }
+
+            if let Some(page) = children.get("second-child") {
+                assert_eq!("second child", page.info.title);
+                assert_eq!("second-child", page.info.slug);
+            } else {
+                panic!("Page is missing");
+            }
+        } else {
+            panic!("Page is not an Index");
+        }
+    }
+}

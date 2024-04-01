@@ -2,16 +2,17 @@ use std::path::PathBuf;
 
 use color_eyre::{eyre::eyre, Result};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Args {
     pub mode: SorgMode,
     pub path: PathBuf,
     pub verbose: bool,
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Default)]
 pub enum SorgMode {
     /// Basic HTML generation from the provided file
+    #[default]
     Run,
     /// Generate HTML and start server
     Serve,

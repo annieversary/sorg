@@ -109,11 +109,9 @@ fn main() -> Result<()> {
 }
 
 fn build_files(config: &Config, org: Org<'_>, mut tera: Tera) -> Result<()> {
-    let doc = org.document();
-    let first = doc.first_child(&org).unwrap();
     let tree = Page::parse_index(
         &org,
-        first,
+        org.document().first_child(&org).unwrap(),
         &TODO_KEYWORDS,
         "".to_string(),
         0,

@@ -6,7 +6,7 @@ use vfs::{MemoryFS, VfsPath};
 
 use crate::args::Args;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct Config {
     pub root_folder: PathBuf,
@@ -138,5 +138,44 @@ impl TodoKeywords {
             self.todo.iter().map(ToString::to_string).collect(),
             self.done.iter().map(ToString::to_string).collect(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fails_if_empty_preamble() {
+        let source = r#"
+* index
+"#;
+
+        let fs: VfsPath = MemoryFS::new().into();
+        let args = Args::default();
+        let org = Org::parse(source);
+
+        let config = Config::new(&fs, &args, &org).unwrap_err();
+
+        assert_eq!("Keyword 'title' was not provided", format!("{}", config))
+    }
+
+    #[test]
+    fn can_parse() {
+        let source = r#"
+#+title: this is a title
+#+description: this is a description
+#+url: a url here
+"#;
+
+        let fs: VfsPath = MemoryFS::new().into();
+        let args = Args::default();
+        let org = Org::parse(source);
+
+        let config = Config::new(&fs, &args, &org).unwrap();
+
+        assert_eq!("this is a title", config.title);
+        assert_eq!("this is a description", config.description);
+        assert_eq!("a url here", config.url);
     }
 }
