@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
+    fmt::Write as FmtWrite,
     io::Write,
     marker::PhantomData,
     sync::OnceLock,
@@ -271,8 +272,10 @@ impl CommonHtmlHandler {
 
         self.attributes
             .iter()
-            .map(|(k, v)| format!(" {k}=\"{v}\" "))
-            .collect()
+            .fold(String::new(), |mut output, (k, v)| {
+                let _ = write!(output, " {k}=\"{v}\" ");
+                output
+            })
     }
 }
 
