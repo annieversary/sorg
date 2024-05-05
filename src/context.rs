@@ -8,7 +8,7 @@ use tera::Context;
 use crate::{
     count_words::*,
     footnotes::*,
-    macros::Macro,
+    macros::Macros,
     page::{Page, PageEnum},
     render::*,
     Config,
@@ -18,7 +18,7 @@ impl Page<'_> {
     pub fn page_context(
         &self,
         org: &Org<'_>,
-        macros: Rc<HashMap<String, Macro>>,
+        macros: Rc<Macros>,
         config: &Config,
     ) -> Result<Context> {
         let mut context = match &self.page {
@@ -61,7 +61,7 @@ fn get_index_context(
     headline: &Headline,
     org: &Org<'_>,
     children: &HashMap<String, Page>,
-    macros: Rc<HashMap<String, Macro>>,
+    macros: Rc<Macros>,
     config: &Config,
 ) -> Context {
     let mut pages = children
@@ -110,7 +110,7 @@ fn get_index_context(
 fn get_post_context(
     headline: &Headline,
     org: &Org<'_>,
-    macros: Rc<HashMap<String, Macro>>,
+    macros: Rc<Macros>,
     config: &Config,
 ) -> Context {
     let sections = headline
@@ -150,7 +150,7 @@ fn get_org_file_context(
     headline: &Headline,
     org: &Org<'_>,
     file: &Path,
-    macros: Rc<HashMap<String, Macro>>,
+    macros: Rc<Macros>,
     config: &Config,
 ) -> Result<Context> {
     let sections = headline

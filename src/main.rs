@@ -4,7 +4,7 @@ use color_eyre::{
     Result,
 };
 use folders::generate_folders;
-use macros::get_macro_definitions;
+use macros::Macros;
 use notify_debouncer_mini::{new_debouncer, notify::*};
 use orgize::{Org, ParseConfig};
 use std::{path::Path, rc::Rc, time::Duration};
@@ -122,7 +122,7 @@ fn main() -> Result<()> {
 }
 
 fn build_files(config: &Config, org: Org<'_>, mut tera: Tera) -> Result<()> {
-    let macros = get_macro_definitions(&org);
+    let macros = Macros::parse(&org);
 
     let tree = Page::parse_index(
         &org,

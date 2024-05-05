@@ -25,7 +25,7 @@ use tera::{Context, Tera};
 use vfs::VfsPath;
 
 use crate::{
-    macros::Macro,
+    macros::Macros,
     page::{Page, PageEnum},
     tera::get_template,
     Config,
@@ -38,7 +38,7 @@ impl<'a> Page<'a> {
         out: VfsPath,
         config: &Config,
         org: &Org,
-        macros: Rc<HashMap<String, Macro>>,
+        macros: Rc<Macros>,
         hotreloading: bool,
     ) -> Result<tera::Context> {
         let out_path = if self.info.slug == "index" {
@@ -268,7 +268,7 @@ pub struct CommonHtmlHandler {
     pub attributes: HashMap<String, String>,
     pub footnote_id: usize,
 
-    pub macros: Rc<HashMap<String, Macro>>,
+    pub macros: Rc<Macros>,
 }
 
 impl CommonHtmlHandler {
@@ -309,9 +309,9 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                 )?;
             }
             Element::Macros(call) => {
-                if let Some(def) = self.macros.get(&call.name.to_string()) {
+                if let Some(macro_processor) = self.macros.get(&call.name.to_string()) {
                     let args = call.arguments.as_deref().unwrap_or_default();
-                    def.process(args)?;
+                    macro_processor.process(args)?;
                 }
             }
             Element::Paragraph { .. } => write!(w, "<p {}>", self.render_attributes(""))?,

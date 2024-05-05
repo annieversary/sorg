@@ -10,68 +10,92 @@ pub struct Macro {
     definition: String,
 }
 
-impl Macro {
+#[derive(Default)]
+pub struct Macros {
+    macros: HashMap<String, Macro>,
+}
+
+impl Macros {
+    pub fn parse<'a>(org: &'a Org<'a>) -> Self {
+        let mut macros = HashMap::default();
+        let mut in_macro: Option<Macro> = None;
+
+        for ev in org.iter() {
+            match ev {
+                orgize::Event::Start(element) => match element {
+                    Element::SpecialBlock(block) => {
+                        if let Some(parameters) = &block.parameters {
+                            let mut parameters = parameters.split_whitespace();
+
+                            let Some(label) = parameters.next() else {
+                                continue;
+                            };
+
+                            in_macro = Some(Macro {
+                                label: label.to_string(),
+                                arguments: parameters.map(ToString::to_string).collect(),
+                                definition: "".to_string(),
+                            });
+                        }
+                    }
+                    Element::Text { value } if in_macro.is_some() => {
+                        if let Some(r#macro) = &mut in_macro {
+                            r#macro.definition.push_str(value);
+                        }
+                    }
+
+                    _ => {}
+                },
+                orgize::Event::End(element) => {
+                    if let Element::SpecialBlock(_) = element {
+                        if let Some(r#macro) = in_macro.take() {
+                            macros.insert(r#macro.label.clone(), r#macro);
+                        }
+                    }
+                }
+            }
+        }
+
+        Self::from_macros(macros)
+    }
+
+    pub fn from_macros(macros: HashMap<String, Macro>) -> Self {
+        Self { macros }
+    }
+
+    pub fn get<'a>(&'a self, name: &'_ str) -> Option<MacroProcessor<'a>> {
+        self.macros
+            .get(name)
+            .map(|definition| MacroProcessor { definition })
+    }
+}
+
+pub struct MacroProcessor<'a> {
+    definition: &'a Macro,
+}
+
+impl<'a> MacroProcessor<'a> {
     pub fn process(&self, arguments: &str) -> Result<String> {
         let arguments = arguments
             .split(',')
             .map(|arg| arg.trim())
             .collect::<Vec<_>>();
 
-        if arguments.len() != self.arguments.len() {
-            bail!("macro call argument count mismatch for {}", self.label);
+        if arguments.len() != self.definition.arguments.len() {
+            bail!(
+                "macro call argument count mismatch for {}",
+                self.definition.label
+            );
         }
 
         // TODO this should be tera instead
-        let mut content = self.definition.clone();
-        for (name, value) in self.arguments.iter().zip(arguments.iter()) {
+        let mut content = self.definition.definition.clone();
+        for (name, value) in self.definition.arguments.iter().zip(arguments.iter()) {
             content = content.replace(&format!("${name}"), value)
         }
 
         Ok(content)
     }
-}
-
-pub fn get_macro_definitions<'a>(org: &'a Org<'a>) -> HashMap<String, Macro> {
-    let mut macros = HashMap::default();
-    let mut in_macro: Option<Macro> = None;
-
-    for ev in org.iter() {
-        match ev {
-            orgize::Event::Start(element) => match element {
-                Element::SpecialBlock(block) => {
-                    if let Some(parameters) = &block.parameters {
-                        let mut parameters = parameters.split_whitespace();
-
-                        let Some(label) = parameters.next() else {
-                            continue;
-                        };
-
-                        in_macro = Some(Macro {
-                            label: label.to_string(),
-                            arguments: parameters.map(ToString::to_string).collect(),
-                            definition: "".to_string(),
-                        });
-                    }
-                }
-                Element::Text { value } if in_macro.is_some() => {
-                    if let Some(r#macro) = &mut in_macro {
-                        r#macro.definition.push_str(value);
-                    }
-                }
-
-                _ => {}
-            },
-            orgize::Event::End(element) => {
-                if let Element::SpecialBlock(_) = element {
-                    if let Some(r#macro) = in_macro.take() {
-                        macros.insert(r#macro.label.clone(), r#macro);
-                    }
-                }
-            }
-        }
-    }
-
-    macros
 }
 
 #[cfg(test)]
@@ -86,10 +110,10 @@ hello $name $surname
 
         let org = Org::parse(source);
 
-        let macros = get_macro_definitions(&org);
+        let macros = Macros::parse(&org);
 
         assert_eq!(
-            macros.get("test").cloned(),
+            macros.macros.get("test").cloned(),
             Some(Macro {
                 label: "test".to_string(),
                 arguments: vec!["$name".to_string(), "$surname".to_string()],
@@ -107,10 +131,10 @@ this is a second line
 
         let org = Org::parse(source);
 
-        let macros = get_macro_definitions(&org);
+        let macros = Macros::parse(&org);
 
         assert_eq!(
-            macros.get("test").cloned(),
+            macros.macros.get("test").cloned(),
             Some(Macro {
                 label: "test".to_string(),
                 arguments: vec!["$name".to_string(), "$surname".to_string()],
@@ -127,6 +151,8 @@ this is a second line
             definition: "hello $arg1 hey $arg2".to_string(),
         };
 
+        let m = MacroProcessor { definition: &m };
+
         assert_eq!("hello name1 hey name2", m.process("name1, name2").unwrap());
     }
 
@@ -137,6 +163,8 @@ this is a second line
             arguments: vec!["arg1".to_string(), "arg2".to_string()],
             definition: "hello $arg1 hey $arg2".to_string(),
         };
+
+        let m = MacroProcessor { definition: &m };
 
         assert!(m.process("name1, name2, name3").is_err());
     }
