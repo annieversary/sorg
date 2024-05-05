@@ -309,9 +309,10 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                 )?;
             }
             Element::Macros(call) => {
-                if let Some(macro_processor) = self.macros.get(&call.name.to_string()) {
+                if let Some(macro_processor) = self.macros.get(call.name.as_ref()) {
                     let args = call.arguments.as_deref().unwrap_or_default();
-                    macro_processor.process(args)?;
+                    let out = macro_processor.process(args)?;
+                    write!(w, "{}", out)?;
                 }
             }
             Element::Paragraph { .. } => write!(w, "<p {}>", self.render_attributes(""))?,
