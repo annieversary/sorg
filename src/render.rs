@@ -343,9 +343,12 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
             }
 
             Element::Link(link) => {
-                let path = link.path.trim_start_matches("file:");
-                let path = path
-                    .trim_start_matches(format!("./{}", self.config.static_path.as_str()).as_str());
+                let path = link
+                    .path
+                    .trim_start_matches("file:")
+                    .trim_start_matches(format!("./{}", self.config.static_path.as_str()).as_str())
+                    .trim_start_matches(format!(".{}", self.config.static_path.as_str()).as_str())
+                    .trim_start_matches(format!("/{}", self.config.static_path.as_str()).as_str());
                 let mut attrs = self.render_attributes("");
 
                 let lower = path.to_lowercase();
