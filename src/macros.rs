@@ -80,15 +80,14 @@ impl Macros {
     }
 
     pub fn from_macros(macros: HashMap<String, Macro>) -> Result<Self> {
-        let mut tera = Tera::new("*/nothing.sorg")?;
+        let mut tera = Tera::default();
 
+        // there's no register_macro function, so we need to make a template that contains all the macro definitions
+        // we can then import this template in all the actual templates
         let mut macros_template = String::new();
-
         for m in macros.values() {
-            // there's no register_macro function, so we need to make a template that does it manually
             m.to_tera_macro(&mut macros_template)?;
         }
-
         tera.add_raw_template("__all_macro_definitions", &macros_template)?;
 
         for m in macros.values() {
@@ -97,6 +96,8 @@ impl Macros {
 
             tera.add_raw_template(&m.label, &template)?;
         }
+
+        tera.build_inheritance_chains()?;
 
         Ok(Self { macros, tera })
     }
