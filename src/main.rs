@@ -122,7 +122,7 @@ fn main() -> Result<()> {
 }
 
 fn build_files(config: &Config, org: Org<'_>, mut tera: Tera) -> Result<()> {
-    let macros = Macros::parse(&org);
+    let macros = Macros::parse(&org)?;
 
     let tree = Page::parse_index(
         &org,
