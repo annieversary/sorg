@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::Read, path::Path};
+use std::{collections::HashMap, fs::File, io::Read, path::Path, rc::Rc};
 
 use color_eyre::{eyre::WrapErr, Result};
 use orgize::{Headline, Org};
@@ -8,19 +8,27 @@ use tera::Context;
 use crate::{
     count_words::*,
     footnotes::*,
+    macros::Macro,
     page::{Page, PageEnum},
     render::*,
     Config,
 };
 
 impl Page<'_> {
-    pub fn page_context(&self, org: &Org<'_>, config: &Config) -> Result<Context> {
+    pub fn page_context(
+        &self,
+        org: &Org<'_>,
+        macros: Rc<HashMap<String, Macro>>,
+        config: &Config,
+    ) -> Result<Context> {
         let mut context = match &self.page {
             PageEnum::Index { children } => {
-                get_index_context(&self.headline, org, children, config)
+                get_index_context(&self.headline, org, children, macros, config)
             }
-            PageEnum::Post => get_post_context(&self.headline, org, config),
-            PageEnum::OrgFile { path } => get_org_file_context(&self.headline, org, path, config)?,
+            PageEnum::Post => get_post_context(&self.headline, org, macros, config),
+            PageEnum::OrgFile { path } => {
+                get_org_file_context(&self.headline, org, path, macros, config)?
+            }
         };
 
         context.insert("asset_v", &rand::random::<u16>());
@@ -53,6 +61,7 @@ fn get_index_context(
     headline: &Headline,
     org: &Org<'_>,
     children: &HashMap<String, Page>,
+    macros: Rc<HashMap<String, Macro>>,
     config: &Config,
 ) -> Context {
     let mut pages = children
@@ -77,6 +86,7 @@ fn get_index_context(
                 config: config.clone(),
                 attributes: Default::default(),
                 footnote_id: 0,
+                macros,
             },
             in_headline: false,
             in_page_title: false,
@@ -97,7 +107,12 @@ fn get_index_context(
 /// generates the context for a blog post
 ///
 /// renders the contents and gets the sections and stuff
-fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> Context {
+fn get_post_context(
+    headline: &Headline,
+    org: &Org<'_>,
+    macros: Rc<HashMap<String, Macro>>,
+    config: &Config,
+) -> Context {
     let sections = headline
         .children(org)
         .map(|h| h.title(org).raw.clone())
@@ -112,6 +127,7 @@ fn get_post_context(headline: &Headline, org: &Org<'_>, config: &Config) -> Cont
             config: config.clone(),
             attributes: Default::default(),
             footnote_id: 0,
+            macros,
         },
         in_page_title: false,
     };
@@ -134,6 +150,7 @@ fn get_org_file_context(
     headline: &Headline,
     org: &Org<'_>,
     file: &Path,
+    macros: Rc<HashMap<String, Macro>>,
     config: &Config,
 ) -> Result<Context> {
     let sections = headline
@@ -169,6 +186,7 @@ fn get_org_file_context(
                 config: config.clone(),
                 attributes: Default::default(),
                 footnote_id: 0,
+                macros,
             },
             in_page_title: false,
         },

@@ -4,6 +4,7 @@ use std::{
     fmt::Write as FmtWrite,
     io::Write,
     marker::PhantomData,
+    rc::Rc,
     sync::OnceLock,
 };
 
@@ -24,6 +25,7 @@ use tera::{Context, Tera};
 use vfs::VfsPath;
 
 use crate::{
+    macros::Macro,
     page::{Page, PageEnum},
     tera::get_template,
     Config,
@@ -36,6 +38,7 @@ impl<'a> Page<'a> {
         out: VfsPath,
         config: &Config,
         org: &Org,
+        macros: Rc<HashMap<String, Macro>>,
         hotreloading: bool,
     ) -> Result<tera::Context> {
         let out_path = if self.info.slug == "index" {
@@ -55,7 +58,7 @@ impl<'a> Page<'a> {
             println!("writing {}", out_path.as_str());
         }
 
-        let context = self.page_context(org, config)?;
+        let context = self.page_context(org, macros.clone(), config)?;
 
         render_template(tera, &template, &context, out_path.clone(), hotreloading)
             .with_context(|| format!("rendering {}", &self.info.title))?;
@@ -64,8 +67,14 @@ impl<'a> Page<'a> {
             let children = children
                 .values()
                 .map(|child| -> Result<_> {
-                    let context =
-                        child.render(tera, out_path.clone(), config, org, hotreloading)?;
+                    let context = child.render(
+                        tera,
+                        out_path.clone(),
+                        config,
+                        org,
+                        macros.clone(),
+                        hotreloading,
+                    )?;
                     Ok((child, context))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -258,6 +267,8 @@ pub struct CommonHtmlHandler {
 
     pub attributes: HashMap<String, String>,
     pub footnote_id: usize,
+
+    pub macros: Rc<HashMap<String, Macro>>,
 }
 
 impl CommonHtmlHandler {
@@ -296,6 +307,12 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                     w,
                     r##"<sup id="fnref-{label}"><a href="#fn-{label}" class="footnote-ref">{label}</a></sup>"##
                 )?;
+            }
+            Element::Macros(call) => {
+                if let Some(def) = self.macros.get(&call.name.to_string()) {
+                    let args = call.arguments.as_deref().unwrap_or_default();
+                    def.process(args)?;
+                }
             }
             Element::Paragraph { .. } => write!(w, "<p {}>", self.render_attributes(""))?,
             Element::QuoteBlock(_) => write!(w, "<blockquote {}>", self.render_attributes(""))?,

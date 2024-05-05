@@ -4,9 +4,10 @@ use color_eyre::{
     Result,
 };
 use folders::generate_folders;
+use macros::get_macro_definitions;
 use notify_debouncer_mini::{new_debouncer, notify::*};
 use orgize::{Org, ParseConfig};
-use std::{path::Path, time::Duration};
+use std::{path::Path, rc::Rc, time::Duration};
 use vfs::{PhysicalFS, VfsPath};
 
 mod args;
@@ -17,6 +18,7 @@ mod folders;
 mod footnotes;
 mod helpers;
 mod hotreloading;
+mod macros;
 mod page;
 mod render;
 mod rss;
@@ -120,6 +122,8 @@ fn main() -> Result<()> {
 }
 
 fn build_files(config: &Config, org: Org<'_>, mut tera: Tera) -> Result<()> {
+    let macros = get_macro_definitions(&org);
+
     let tree = Page::parse_index(
         &org,
         org.document().first_child(&org).unwrap(),
@@ -147,6 +151,7 @@ fn build_files(config: &Config, org: Org<'_>, mut tera: Tera) -> Result<()> {
         config.build_path.clone(),
         config,
         &org,
+        Rc::new(macros),
         config.hotreloading,
     )?;
 
