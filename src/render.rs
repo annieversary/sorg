@@ -400,26 +400,20 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
                     }
                 }
             }
+            Element::InlineSrc(inline_src) => write!(
+                w,
+                "<code>{}</code>",
+                highlight(&self.handler, &inline_src.lang, &inline_src.body)
+            )?,
             Element::SourceBlock(block) => {
                 if block.language.is_empty() {
                     write!(w, "<pre class=\"example\">{}</pre>", block.contents)?;
                 } else {
-                    let highlight = if block.language.eq_ignore_ascii_case("php")
-                        && !block.contents.starts_with("<?php")
-                    {
-                        highlight(
-                            &self.handler,
-                            Some(&block.language),
-                            &format!("<?php\n{}", block.contents),
-                        )
-                    } else {
-                        highlight(&self.handler, Some(&block.language), &block.contents)
-                    };
-
                     write!(
                         w,
                         "<div class=\"org-src-container\"><pre class=\"src src-{}\">{}</pre></div>",
-                        block.language, highlight
+                        block.language,
+                        highlight(&self.handler, &block.language, &block.contents)
                     )?;
                 }
             }
@@ -446,16 +440,38 @@ impl HtmlHandler<Report> for CommonHtmlHandler {
 // from https://docs.rs/orgize/latest/src/orgize/export/html.rs.html#330
 fn highlight<E: From<Error>, H: HtmlHandler<E>>(
     syntect: &SyntectHtmlHandler<E, H>,
-    language: Option<&str>,
+    language: &str,
     content: &str,
 ) -> String {
     let mut highlighter = HighlightLines::new(
-        language
-            .and_then(|lang| syntect.syntax_set.find_syntax_by_token(lang))
+        syntect
+            .syntax_set
+            .find_syntax_by_token(language)
             .unwrap_or_else(|| syntect.syntax_set.find_syntax_plain_text()),
         &syntect.theme_set.themes[&syntect.theme],
     );
 
-    let regions = highlighter.highlight(content, &syntect.syntax_set);
-    styled_line_to_highlighted_html(&regions[..], syntect.background)
+    if language.eq_ignore_ascii_case("php") && !content.starts_with("<?php") {
+        let s = format!("<?php {}", content);
+        let regions = highlighter.highlight(&s, &syntect.syntax_set);
+        let mut res = styled_line_to_highlighted_html(&regions[..], syntect.background);
+
+        // TODO this is hard coded to that one theme
+        if res.starts_with("<span style=\"color:#323232;\">&lt;?php ") {
+            res = res
+                .trim_start_matches("<span style=\"color:#323232;\">&lt;?php ")
+                .to_string();
+
+            if res.starts_with("</span>") {
+                res = res.trim_start_matches("</span>").to_string();
+            } else {
+                res = format!("<span style=\"color:#323232;\">{res}");
+            }
+        }
+
+        res
+    } else {
+        let regions = highlighter.highlight(content, &syntect.syntax_set);
+        styled_line_to_highlighted_html(&regions[..], syntect.background)
+    }
 }
